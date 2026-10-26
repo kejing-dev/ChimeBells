@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">编钟</string>
+    <string name="title">编钟</string>
+    <string name="chip_half">1:2 缩小显示</string>
+
+    <string name="mode_free">自由敲</string>
+    <string name="mode_follow">跟奏</string>
+    <string name="song_molihua">茉莉花</string>
+    <string name="song_xiaoxingxing">小星星</string>
+    <string name="song_huanlesong">欢乐颂</string>
+    <string name="song_molihua_full">茉莉花</string>
+    <string name="song_xiaoxingxing_full">小星星</string>
+    <string name="song_huanlesong_full">欢乐颂</string>
+
+    <string name="action_listen">听一遍</string>
+    <string name="action_follow">跟着敲</string>
+    <string name="action_stop">停止</string>
+    <string name="action_again">再来一遍</string>
+    <string name="action_turn45">转 45°</string>
+    <string name="action_more">更多</string>
+    <string name="action_exit">退出</string>
+    <string name="action_retry">重试</string>
+
+    <string name="snapped_small">已对齐</string>
+    <string name="playing_song">正在演奏《%1$s》</string>
+    <string name="target_line">%1$s %2$s · %3$s</string>
+    <string name="zone_zheng">正鼓</string>
+    <string name="zone_ce">侧鼓</string>
+    <string name="progress">%1$d/%2$d</string>
+
+    <string name="hint_starting">正在准备…</string>
+    <string name="hint_finding">环顾一下房间，正在找地面…</string>
+    <string name="hint_placing">看向地面捏一下放下 · 摇杆左右转动</string>
+    <string name="hint_near">再远一点</string>
+    <string name="hint_snapped">已对齐墙边 · 捏一下放下</string>
+    <string name="hint_free">看着钟捏一下 · 正中、侧边是两个音</string>
+    <string name="hint_pick">选一首，听一遍或跟着敲</string>
+    <string name="hint_follow">跟着亮的敲</string>
+    <string name="hint_demo">听一听</string>
+    <string name="hint_done">敲完了！</string>
+
+    <string name="menu_labels">音名</string>
+    <string name="labels_show">显示</string>
+    <string name="labels_hide">隐藏</string>
+    <string name="menu_language">语言</string>
+    <string name="lang_zh">中文</string>
+    <string name="lang_en">EN</string>
+    <string name="menu_size">大小</string>
+    <string name="size_full">1:1</string>
+    <string name="size_half">1:2</string>
+    <string name="menu_replace">重新摆放</string>
+
+    <string name="dialog_nofloor_title">没找到地面</string>
+    <string name="dialog_nofloor_body">低头看看地板，再试一次。</string>
+    <string name="dialog_blocked_title">空间能力不可用</string>
+    <string name="dialog_blocked_body">请在系统设置中允许平面识别。</string>
+
+    <string name="snack_coach">一口钟两个音：敲正中、敲侧边</string>
+    <string name="snack_no_wall">没有 %1$s 长的墙，可自由摆放，或在更多里缩到 1:2</string>
+    <string name="snack_low_ceiling">天花板偏低，可在更多里缩到 1:2</string>
+    <string name="snack_snapped">已对齐墙边</string>
+</resources>

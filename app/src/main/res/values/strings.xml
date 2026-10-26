@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Chime Bells</string>
+    <string name="title">Chime Bells</string>
+    <string name="chip_half">1:2 view</string>
+
+    <string name="mode_free">Free play</string>
+    <string name="mode_follow">Follow</string>
+    <string name="song_molihua">Jasmine</string>
+    <string name="song_xiaoxingxing">Twinkle</string>
+    <string name="song_huanlesong">Ode to Joy</string>
+    <string name="song_molihua_full">Jasmine Flower</string>
+    <string name="song_xiaoxingxing_full">Twinkle Twinkle</string>
+    <string name="song_huanlesong_full">Ode to Joy</string>
+
+    <string name="action_listen">Listen</string>
+    <string name="action_follow">Play along</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_again">Again</string>
+    <string name="action_turn45">Turn 45°</string>
+    <string name="action_more">More</string>
+    <string name="action_exit">Exit</string>
+    <string name="action_retry">Retry</string>
+
+    <string name="snapped_small">Lined up</string>
+    <string name="playing_song">Playing “%1$s”</string>
+    <string name="target_line">%2$s · %3$s</string>
+    <string name="zone_zheng">centre</string>
+    <string name="zone_ce">side</string>
+    <string name="progress">%1$d/%2$d</string>
+
+    <string name="hint_starting">Getting ready…</string>
+    <string name="hint_finding">Look around, finding the floor…</string>
+    <string name="hint_placing">Look at the floor and pinch · stick left/right turns</string>
+    <string name="hint_near">A bit farther</string>
+    <string name="hint_snapped">Lined up with the wall · pinch to place</string>
+    <string name="hint_free">Look at a bell face and pinch · centre and side are two notes</string>
+    <string name="hint_pick">Pick a song, listen or play along</string>
+    <string name="hint_follow">Strike the glowing one</string>
+    <string name="hint_demo">Listen</string>
+    <string name="hint_done">All done!</string>
+
+    <string name="menu_labels">Names</string>
+    <string name="labels_show">Show</string>
+    <string name="labels_hide">Hide</string>
+    <string name="menu_language">Language</string>
+    <string name="lang_zh">中文</string>
+    <string name="lang_en">EN</string>
+    <string name="menu_size">Size</string>
+    <string name="size_full">1:1</string>
+    <string name="size_half">1:2</string>
+    <string name="menu_replace">Move rack</string>
+
+    <string name="dialog_nofloor_title">No floor found</string>
+    <string name="dialog_nofloor_body">Look down at the floor and try again.</string>
+    <string name="dialog_blocked_title">Spatial features unavailable</string>
+    <string name="dialog_blocked_body">Allow plane detection in Settings.</string>
+
+    <string name="snack_coach">One bell, two notes: strike the centre, then the side</string>
+    <string name="snack_no_wall">No %1$s wall: place freely, or pick 1:2 in More</string>
+    <string name="snack_low_ceiling">Low ceiling: pick 1:2 in More</string>
+    <string name="snack_snapped">Lined up with the wall</string>
+</resources>

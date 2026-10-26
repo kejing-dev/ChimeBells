@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chime Bells launcher foreground (design icon): a black-lacquer yongzhong silhouette (shank, xuan
+     ring, almond body with an arched mouth, bosses left in the tile colour) and a thin cinnabar beam line
+     below, on the bronze-gold tile (@color/ic_launcher_background). Same shapes as tools/make_icon.py. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- heng (shank top) and shank -->
+    <path android:fillColor="#221C18" android:pathData="M48,20 H60 V24 H48 Z" />
+    <path android:fillColor="#221C18" android:pathData="M50.5,24 H57.5 L58.5,40 H49.5 Z" />
+    <!-- xuan ring -->
+    <path android:fillColor="#221C18" android:pathData="M47,31 H61 V35 H47 Z" />
+    <!-- body: shoulder 40, corners 80, mouth arching up to 73 -->
+    <path android:fillColor="#221C18" android:pathData="M40,40 H68 Q72,60 75,80 Q54,71 33,80 Q36,60 40,40 Z" />
+    <!-- bosses: 2 x 3 on each side of the centre panel -->
+    <path android:fillColor="#A67C3D" android:pathData="M44,47m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M49,47m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M59,47m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M64,47m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M43.6,54m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M48.8,54m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M59.2,54m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M64.4,54m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M43.2,61m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M48.6,61m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M59.4,61m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0 M64.8,61m-1.8,0a1.8,1.8 0,1 1,3.6 0a1.8,1.8 0,1 1,-3.6 0" />
+    <!-- cinnabar beam line -->
+    <path android:fillColor="#B5382A" android:pathData="M30,85 H78 V88 H30 Z" />
+</vector>
