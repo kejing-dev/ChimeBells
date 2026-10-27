@@ -23,8 +23,11 @@ import io.embodit.bianzhong.domain.model.SurfaceKind
 import io.embodit.bianzhong.domain.model.Tier
 import io.embodit.bianzhong.domain.model.Vec3
 import io.embodit.bianzhong.domain.model.Zone
+import io.embodit.bianzhong.domain.usecase.HeadFrame
+import io.embodit.bianzhong.domain.usecase.PanelClearance
 import io.embodit.bianzhong.domain.usecase.PlacementUseCase
 import io.embodit.bianzhong.domain.usecase.RackPose
+import io.embodit.bianzhong.domain.usecase.RecenterDetector
 import io.embodit.bianzhong.domain.usecase.SnapFrame
 import io.embodit.bianzhong.domain.usecase.WallSnapUseCase
 import io.embodit.bianzhong.platform.ChimeGraph
@@ -114,6 +117,9 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private var panelPressed = false
     private var dialogPlaced = false
     private var lastLost = false
+    private val recenter = RecenterDetector()
+    private var clearanceKey: Any? = null
+    private var frontCheckAtMs = NEVER
 
     // ---- room facts (planes)
     private var lastPlaneCount = -1
@@ -393,6 +399,12 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         if (state.coach && !previous.coach) coachStartMs = SystemClock.elapsedRealtime()
         if (!state.coach) coachStartMs = NEVER
         if (state.background && !previous.background) audio?.stopAll()
+        // back in front: the head may come from a recentred frame (late by up to ~0.8 s, pico-dev-knowledge
+        // "warm resume ... pre-recenter HMD"), so look again 1.5 s later and bring a rack left behind back ahead
+        if (!state.background && previous.background) {
+            recenter.reset()
+            frontCheckAtMs = SystemClock.elapsedRealtime() + FRONT_CHECK_DELAY_MS
+        }
         if (previous.scale != state.scale || previous.wallMin != state.wallMin || previous.forceWall != state.forceWall) framesKey = ""
         if (previous.dialog != null && state.dialog == null) planesFailed = false
         syncPanels(state)
@@ -434,8 +446,10 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         val dialog = rig[PanelSpec.DIALOG]
         if (state.dialog != null) {
             if (!dialogPlaced && hasHead) {
-                val flat = Vec3(head.forward.x, 0f, head.forward.z).let { if (it.length < 0.1f) Vec3.AHEAD else it.normalized() }
-                dialog?.show(head.position + flat * PanelSpec.DIALOG_DISTANCE_M, PanelSpec.FLOATING_SCALE)
+                val flat = HeadFrame.heading(head.rotation)
+                // 10 degrees under the level gaze (D10: never look up), clear of the low control panel (24 - 40 down)
+                val dir = flat * PanelSpec.DIALOG_COS + Vec3(0f, -PanelSpec.DIALOG_SIN, 0f)
+                dialog?.show(head.position + dir * PanelSpec.DIALOG_DISTANCE_M, PanelSpec.FLOATING_SCALE)
                 dialogPlaced = true
             }
         } else {
@@ -514,12 +528,18 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         headTracker.pose()?.let {
             head = it
             hasHead = true
+            if (recenter.feed(now, it.position, it.rotation)) onRecentered("jump", HeadFrame.FRONT_RAD)
+        }
+        if (frontCheckAtMs != NEVER && now >= frontCheckAtMs && hasHead) {
+            frontCheckAtMs = NEVER
+            onRecentered("resume", HeadFrame.BEHIND_RAD)
         }
         val rig = rig ?: return
         rig.onFrame(now)
         rig.stowBehind(head.view)
         val state = ui
         val hold = panelPressed || (lastPanelPressMs != NEVER && now - lastPanelPressMs < PANEL_HOLD_MS) || state.menuOpen || state.dialog != null
+        if (hasHead) clearPanel(state, now)
         if (hasHead && head.position.length > 1e-3f) follower.follow(head, planeTracker.all, planeTracker.count, now, hold)
         placeFamily(state, rig)
         if (state.dialog != null && !dialogPlaced) syncPanels(state)
@@ -537,6 +557,36 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         redrawPlates(state, now)
         rig.faceViewer(head.position)
     }
+
+    /**
+     * The main panel rests under the rack's lower tier (v0.1.1 UI audit, D8): its designed elevation is capped
+     * below the lowest plate / mouth seen from the head, and it slides there again when the rack moves or the
+     * panel changes form (the Follow form is taller).
+     */
+    private fun clearPanel(state: ChimeUiState, now: Long) {
+        val pose = state.rack?.takeIf { state.room.placed }
+        val form = if (state.room.follow) PanelSpec.FOLLOW else PanelSpec.CONTROL
+        if (pose == null) {
+            follower.pitchCap = Float.POSITIVE_INFINITY
+        } else {
+            val (_, hh) = PanelSpec.halfM(form, PanelSpec.MAIN_SCALE)
+            follower.pitchCap = PanelClearance.pitchCap(head.position, lowPoints(pose), hh, Follower.MAIN_OFFSET.length) ?: Float.POSITIVE_INFINITY
+        }
+        val key = pose to form
+        if (key != clearanceKey) {
+            val first = clearanceKey == null
+            clearanceKey = key
+            if (!first && pose != null) follower.park(head, planeTracker.all, now)
+        }
+    }
+
+    /** The lower tier's lowest points in Stage space: each plate's bottom edge and mouth. */
+    private fun lowPoints(pose: RackPose): List<Vec3> =
+        Bells.all.filter { it.tier == Tier.LOWER }.flatMap { spec ->
+            val plate = RackView.plateCenter(spec, 0f) - Vec3(0f, RackView.plateWidth(spec) * RackView.PLATE_ASPECT / 2f, 0f)
+            val mouth = Bells.toRack(spec, Vec3(0f, BellMeshes.MOUTH_Y * spec.heightM, 0f))
+            listOf(pose.toStage(plate), pose.toStage(mouth))
+        }
 
     /** The control panel (short or follow form) and the menu above it ride on the lazy follow. */
     private fun placeFamily(state: ChimeUiState, rig: PanelRig) {
@@ -570,11 +620,15 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         }
         g.setShown(true)
         refreshFrames(state)
+        // the ghost starts straight ahead of the head (D9); the pointer steers it only while its floor point is in
+        // front (an idle controller on the headset still reports a pose, which put the 0.1.0 rack behind the user)
+        val ahead = HeadFrame.rackAhead(head.position, head.rotation, fy, state.scale)
         val ray = pointerRay()
-        val raw = placeRule.floorPoint(ray.origin, ray.direction, fy)
+        val pointed = placeRule.floorPoint(ray.origin, ray.direction, fy)
+        val raw = if (HeadFrame.inFront(head.position, head.rotation, pointed)) pointed else ahead.center
         val (target, near) = placeRule.clamp(raw, head.position, fy)
         val c0 = ghostCenter
-        val center = if (c0 == null || dt <= 0f) target else c0.lerp(target, 1f - exp(-dt / FOLLOW_TAU_S))
+        val center = if (c0 == null) ahead.center else if (dt <= 0f) target else c0.lerp(target, 1f - exp(-dt / FOLLOW_TAU_S))
         ghostCenter = center
         tooClose = near || state.forcedNear
 
@@ -917,6 +971,8 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private fun tapPose(stage: Vec3): RackPose? {
         val fy = floorY ?: return placeablePose()
         if (!hasHead) return placeablePose()
+        // a floor tap behind the user places the ghost (which is in front) instead
+        if (!HeadFrame.inFront(head.position, head.rotation, stage)) return placeablePose()
         val (p, near) = placeRule.clamp(Vec3(stage.x, fy, stage.z), head.position, fy)
         if (near || ui.forcedNear) return null
         val scale = ui.scale
@@ -950,9 +1006,37 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private fun autoPose(): RackPose? {
         if (!hasHead) return null
         val fy = floorY ?: (head.position.y - 1.55f)
-        val flat = Vec3(head.forward.x, 0f, head.forward.z).let { if (it.length < 0.1f) Vec3.AHEAD else it.normalized() }
-        val center = Vec3(head.position.x, fy, head.position.z) + flat * AUTO_DISTANCE_M
-        return RackPose(center, placeRule.yawFacing(center, head.position), ui.scale)
+        return HeadFrame.rackAhead(head.position, head.rotation, fy, ui.scale, AUTO_DISTANCE_M)
+    }
+
+    /**
+     * A recenter (pose jump, or the check after coming back to the front): panels re-park in front of the
+     * head, the placing ghost starts ahead again, and a placed rack whose centre is more than [offRad] off
+     * the level heading goes straight ahead, facing the user (D9). A rack still in front keeps its wall.
+     */
+    private fun onRecentered(reason: String, offRad: Float): String {
+        follower.reset()
+        if (ui.dialog != null) dialogPlaced = false
+        val room = ui.room
+        val rack = ui.rack
+        val off = rack?.let { HeadFrame.bearing(head.position, head.rotation, it.center) }
+        val yawDeg = Math.toDegrees(HeadFrame.yawOf(HeadFrame.heading(head.rotation)).toDouble()).toFloat()
+        val line =
+            "RECENTER reason=$reason room=$room head=${ChimeLog.pos(head.position)} yaw=${ChimeLog.f(yawDeg, 1)}" +
+                (off?.let { " rackOff=${ChimeLog.f(Math.toDegrees(it.toDouble()).toFloat(), 1)}" } ?: "")
+        return when {
+            room == Room.PLACING -> {
+                ghostCenter = null
+                "$line ghost=ahead"
+            }
+            room.placed && rack != null && off != null && off > offRad -> {
+                val fy = floorY ?: rack.center.y
+                val pose = HeadFrame.rackAhead(head.position, head.rotation, fy, rack.scale)
+                sink(ChimeEvent.RackRecentered(pose))
+                "$line rack=ahead center=${ChimeLog.pos(pose.center)}"
+            }
+            else -> "$line rack=kept"
+        }.also { ChimeLog.i(it) }
     }
 
     // =========================================================================================
@@ -971,6 +1055,8 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     override fun planesSummary(): List<String> =
         planeTracker.all.map { p -> "PLANE ${p.label} kind=${p.kind} center=${ChimeLog.pos(p.centroid)} normal=${ChimeLog.pos(p.normal)} verts=${p.vertices.size} top=${ChimeLog.f(p.maxY)}" } +
             frames.mapIndexed { k, f -> "FRAME $k center=${ChimeLog.pos(f.center)} yaw=${ChimeLog.f(Math.toDegrees(f.yaw.toDouble()).toFloat(), 1)} wall=${ChimeLog.f(f.wallLength)}" }
+
+    override fun recenter(): String = if (hasHead) onRecentered("debug", 0f) else "RECENTER ignored: no head"
 
     override fun parkPanel(): String {
         follower.park(head, planeTracker.all, SystemClock.elapsedRealtime())
@@ -991,7 +1077,8 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         private const val STICK_RATE_RAD_S = 1.5708f
         private const val STICK_TAU_S = 0.15f
         private const val TURN_MS = 250f
-        private const val AUTO_DISTANCE_M = 2.5f
+        private const val AUTO_DISTANCE_M = HeadFrame.RACK_AHEAD_M
+        private const val FRONT_CHECK_DELAY_MS = 1500L
         private val SWING_LOWER_RAD = Math.toRadians(2.5).toFloat()
         private val SWING_UPPER_RAD = Math.toRadians(4.0).toFloat()
         private const val SWING_PERIOD_S = 1.2f

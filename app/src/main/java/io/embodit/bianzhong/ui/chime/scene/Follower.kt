@@ -59,6 +59,12 @@ internal class Follower(
     /** Elevation of the designed place below the horizontal, radians (negative = below). */
     private var pitch = 0f
 
+    /**
+     * Highest elevation the designed place may take, radians (set every frame by the scene from the rack:
+     * `PanelClearance`, v0.1.1); never below the 40-degree floor.
+     */
+    var pitchCap = Float.POSITIVE_INFINITY
+
     val sliding: Boolean
         get() = slideStartMs != NEVER
 
@@ -79,7 +85,7 @@ internal class Follower(
         val gaze = kotlin.math.asin(head.forward.y.coerceIn(-1f, 1f))
         val flat = kotlin.math.sqrt(headOffset.x * headOffset.x + headOffset.z * headOffset.z)
         val own = kotlin.math.atan2(headOffset.y, flat)
-        pitch = (gaze + own).coerceIn(MIN_PITCH_RAD, MAX_PITCH_RAD)
+        pitch = minOf((gaze + own).coerceIn(MIN_PITCH_RAD, MAX_PITCH_RAD), pitchCap).coerceAtLeast(MIN_PITCH_RAD)
         val bearing = kotlin.math.atan2(-headOffset.x, -headOffset.z)
         val range = headOffset.length
         val dir = Quat4.axisAngle(Vec3.UP, yaw + bearing).rotate(Vec3(0f, kotlin.math.sin(pitch), -kotlin.math.cos(pitch)))

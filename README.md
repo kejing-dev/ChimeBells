@@ -6,7 +6,7 @@
 
 **Twelve Zeng-Hou-Yi-style bronze bells hang life-size on a two-tier rack beside your real wall. Look at a bell and pinch: strike the centre for one note and the side for another (one bell, two notes). In Follow mode the next drum lights up so you can play a whole tune.**
 
-PICO OS 6 · PICO Spatial SDK 6.1.9 · Kotlin / SpatialUI · package `io.embodit.bianzhong` · v0.1.0 (pre-release / 预发布)
+PICO OS 6 · PICO Spatial SDK 6.1.9 · Kotlin / SpatialUI · package `io.embodit.bianzhong` · v0.1.1 (pre-release / 预发布)
 
 > **模拟器 QA 通过，真机未验证（Simulator-QA passed; not yet verified on a real headset）。**
 
@@ -31,11 +31,16 @@ PICO OS 6 · PICO Spatial SDK 6.1.9 · Kotlin / SpatialUI · package `io.embodit
 ### 安装与启动
 
 ```bash
-adb install -r ChimeBells-v0.1.0.apk
+adb install -r ChimeBells-v0.1.1.apk
 pico-cli app launch io.embodit.bianzhong
 ```
 
 APK 在 [Releases](https://github.com/kejing-dev/ChimeBells/releases) 页面下载（仓库不含 APK）。需要 PICO OS 6 头显或 PICO Emulator 6.1；用到地面 / 墙面平面识别。APK 约 41 MB（含 24 段钟声）。钟架 1:1 需要约 3.8 × 0.9 米的空地；房间小可以在更多菜单里缩到 1:2。
+
+### 版本
+
+- **v0.1.1**：重新摆放 / 回正视角后，钟架按头显当前的位置和朝向出现在正前方 2.5 m、正面朝你，不会再跑到身后（之前幽灵钟架跟着手柄射线走，手柄放着不动、射线朝后时会落到背后）；钟下的音名牌不再上下颠倒；控制面板 / 跟奏面板不再挡住左下几口钟的音名牌和鼓面；提示对话框放到视线略下方。
+- v0.1.0：首个版本。
 
 ### 容器与骨架
 
@@ -80,11 +85,16 @@ Every bell has two notes: strike the front drum (centre) for one, the side drum 
 ### Install and launch
 
 ```bash
-adb install -r ChimeBells-v0.1.0.apk
+adb install -r ChimeBells-v0.1.1.apk
 pico-cli app launch io.embodit.bianzhong
 ```
 
 Download the APK from the [Releases](https://github.com/kejing-dev/ChimeBells/releases) page (the repository itself does not ship an APK). Needs a PICO OS 6 headset or PICO Emulator 6.1; uses floor / wall plane detection. The APK is about 41 MB (24 bell strokes included). The 1:1 rack needs about 3.8 × 0.9 m of clear floor; in a small room shrink it to 1:2 from the More menu.
+
+### Versions
+
+- **v0.1.1**: after "Move rack" or a recenter the rack appears 2.5 m straight ahead of where the headset is facing, its front to you, never behind (0.1.0 let the ghost follow the controller ray, which on the headset could point backwards while the controller lay still); the note plates under the bells are no longer upside down; the control / Follow panel no longer covers the lower-left bells' plates and drums; dialogs sit slightly below eye level.
+- v0.1.0: first build.
 
 ### Container and skeleton
 

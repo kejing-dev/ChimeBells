@@ -20,7 +20,8 @@ import java.util.Locale
  * `mode=free|follow|pick|demo`, `song=molihua|xiaoxingxing|huanlesong`, `step=<n>`, `done=1`,
  * `scale=1|2`, `lang=zh|en|system`, `labels=0|1`, `ceiling=<m>`, `coach=1`, `coach_reset=1`,
  * `freeze=0|1`, `menu=0|1`, `stop=1`, `replace=1`, `retry=1`, `exit=1`; queries `dump=1` (one JSON line
- * `DUMP {...}`, also files/dump.json), `hmd=1`, `bounds=1`, `planes=1` (planes and snap frames), `park=1`,
+ * `DUMP {...}`, also files/dump.json), `hmd=1`, `bounds=1`, `planes=1` (planes and snap frames), `park=1`, `recenter=1` (acts as a
+ * recenter: a placed rack goes straight ahead, the ghost starts ahead; v0.1.1),
  * `ui=<control>` (presses a panel control by name: more, turn45, mode_free, mode_follow, song_*, listen,
  * follow, stop, again, labels_show, labels_hide, lang_system, lang_zh, lang_en, size_full, size_half,
  * menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half).
@@ -33,7 +34,7 @@ internal object DebugCommands {
         listOf(
             "lang", "labels", "scale", "wallmin", "ceiling", "floor_timeout", "coach_reset", "freeze_off", "freeze",
             "state", "goto", "place", "near", "mode", "song", "step", "done", "strike", "hover", "coach",
-            "menu", "stop", "replace", "retry", "ui", "dump", "hmd", "bounds", "planes", "park", "exit",
+            "menu", "stop", "replace", "retry", "ui", "dump", "hmd", "bounds", "planes", "park", "recenter", "exit",
         )
 
     fun run(context: Context, extras: Map<String, String>) {
@@ -94,6 +95,7 @@ internal object DebugCommands {
             }
             "planes" -> scene?.planesSummary()?.forEach { ChimeLog.i(it) } ?: ChimeLog.i(NO_SCENE)
             "park" -> ChimeLog.i(scene?.parkPanel() ?: NO_SCENE)
+            "recenter" -> scene?.recenter() ?: ChimeLog.i(NO_SCENE)
             else -> host.dispatch(ChimeEvent.Debug(key, value))
         }
     }

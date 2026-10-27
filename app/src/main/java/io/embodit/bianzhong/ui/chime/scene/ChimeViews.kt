@@ -11,11 +11,11 @@ import io.embodit.bianzhong.domain.model.BellSpec
 import io.embodit.bianzhong.domain.model.Bells
 import io.embodit.bianzhong.domain.model.Quat4
 import io.embodit.bianzhong.domain.model.Vec3
+import io.embodit.bianzhong.domain.usecase.PlateFacing
 import io.embodit.bianzhong.domain.usecase.RackPose
 import io.embodit.bianzhong.platform.ChimeLog
 import kotlin.math.abs
 import kotlin.math.acos
-import kotlin.math.atan2
 
 /** Meshes shared by the rack, its ghost, the plates, ripples and outlines (made once, two per frame). */
 internal class ChimeMeshes(
@@ -181,8 +181,7 @@ internal class RackView(parent: Entity, private val materials: SceneMaterials, p
             e.enabled = visible
         }
         if (!visible) return
-        val yaw = if (headLocal == null) 0f else atan2(headLocal.x - center.x, headLocal.z - center.z)
-        e.setLocal(position = center, rotation = Quat4.axisAngle(Vec3.UP, yaw))
+        e.setLocal(position = center, rotation = PlateFacing.turn(center, headLocal))
     }
 
     /** Gold over the plate's left (front drum) / right (side drum) half. */

@@ -20,9 +20,14 @@ object PanelSpec {
     /** The control family is shown at 0.75 (1 dp = 0.6 mm). */
     const val MAIN_SCALE = 0.75f
 
-    /** Dialog 0.9 m ahead, snackbar 0.9 m away 14 degrees up: both at 1.125. */
+    /** Dialog 0.9 m ahead (10 degrees down), snackbar 0.9 m away 14 degrees up: both at 1.125. */
     const val FLOATING_SCALE = 1.125f
     const val DIALOG_DISTANCE_M = 0.9f
+
+    /** The dialog sits 10 degrees below the level gaze (v0.1.1, taste profile D10; 0.1.0 had it at eye level). */
+    const val DIALOG_DOWN_DEG = 10f
+    val DIALOG_COS = kotlin.math.cos(Math.toRadians(DIALOG_DOWN_DEG.toDouble())).toFloat()
+    val DIALOG_SIN = kotlin.math.sin(Math.toRadians(DIALOG_DOWN_DEG.toDouble())).toFloat()
 
     val pool: List<String> = listOf(CONTROL, FOLLOW, MENU, DIALOG, SNACK)
 

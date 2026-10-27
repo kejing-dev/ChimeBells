@@ -111,6 +111,9 @@ sealed interface ChimeEvent {
 
     data class GhostChanged(val snapped: Boolean, val tooClose: Boolean) : ChimeEvent
 
+    /** After a recenter the rack was left off the heading: it goes to [pose], straight ahead (D9). */
+    data class RackRecentered(val pose: RackPose) : ChimeEvent
+
     /** A tap on the floor / trigger while placing: the scene's ghost pose (null = cannot place here). */
     data class PlaceRequested(val pose: RackPose?) : ChimeEvent
 

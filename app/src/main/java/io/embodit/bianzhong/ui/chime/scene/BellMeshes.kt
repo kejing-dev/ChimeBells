@@ -7,6 +7,7 @@ import com.pico.spatial.core.math.Vector2
 import com.pico.spatial.core.math.Vector3
 import io.embodit.bianzhong.domain.model.Bells
 import io.embodit.bianzhong.domain.model.Vec3
+import io.embodit.bianzhong.domain.usecase.PlateFacing
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.acos
@@ -315,12 +316,8 @@ internal object BellMeshes {
     fun quadUv(name: String, x0: Float = -0.5f, x1: Float = 0.5f): MeshResource {
         val m = MeshBuilder()
         val n = Vec3(0f, 0f, 1f)
-        val u0 = x0 + 0.5f
-        val u1 = x1 + 0.5f
-        val a = m.vertex(Vec3(x0, -0.5f, 0f), n, u0, 1f)
-        val b = m.vertex(Vec3(x1, -0.5f, 0f), n, u1, 1f)
-        val c = m.vertex(Vec3(x1, 0.5f, 0f), n, u1, 0f)
-        val d = m.vertex(Vec3(x0, 0.5f, 0f), n, u0, 0f)
+        // v = 1 on the top edge: the engine samples v = 0 at the bitmap's bottom row (0.1.0 had the plates upside down)
+        val (a, b, c, d) = PlateFacing.corners(x0, x1).map { m.vertex(it.position, n, it.u, it.v) }
         m.quad(a, b, c, d)
         return m.build(name)
     }

@@ -139,6 +139,12 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                     }
                 }
             }
+            is ChimeEvent.RackRecentered -> {
+                if (room.placed && rack != null) {
+                    rack = event.pose.copy(scale = scale)
+                    ChimeLog.i("PLACE recentred center=${ChimeLog.pos(event.pose.center)} yaw=${ChimeLog.f(Math.toDegrees(event.pose.yaw.toDouble()).toFloat(), 1)}")
+                }
+            }
             is ChimeEvent.BellTapped -> onBell(event.bell, event.zone, event.local)
             ChimeEvent.NothingTapped -> if (menuOpen) menuOpen = false
             is ChimeEvent.HoverChanged -> hover = event.hover

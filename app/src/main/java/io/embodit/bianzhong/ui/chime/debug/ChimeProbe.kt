@@ -59,6 +59,9 @@ object ChimeProbe {
         fun planesSummary(): List<String>
 
         fun parkPanel(): String
+
+        /** Acts as a recenter: panels, ghost and a rack off the heading go straight ahead (`recenter=1`). */
+        fun recenter(): String
     }
 
     @Volatile var host: Host? = null

@@ -3,7 +3,7 @@
 Twelve Zeng-Hou-Yi-style yongzhong hang 1:1 on a two-tier lacquer rack beside your real wall: look at a bell
 and pinch, strike the centre for one note and the side for another (one bell, two notes); in Follow the
 next drum glows so you can play a tune through. PICO OS 6, Kotlin, PICO Spatial SDK 6.1.9, one Mixed Stage
-(Full Space, passthrough), package `io.embodit.bianzhong`, v0.1.0.
+(Full Space, passthrough), package `io.embodit.bianzhong`, v0.1.1.
 
 Design package (binding): `../spatial-app-factory/apps/bianzhong/design-package.json` (v1.2.1, archetype D,
 STAGE_MIXED, single panel with popup, 19 states S0 - S18). Mockup: `../spatial-app-factory/apps/bianzhong/sample.html`.
@@ -49,6 +49,34 @@ One direction of data: panel controls, scene callbacks (planes, ghost snap / too
 debug hooks -> `ChimeViewModel.onEvent` -> `ChimeUiState` -> `ChimeScene.render` and the panels; strokes,
 the done wave and stop / exit are one-shot `ChimeUiEffect`s. Per-frame work lives in `ChimeScene.onFrame` only.
 
+## v0.1.1 — placement from the head, plates upright, panel clear of the bells
+
+Headset feedback on 0.1.0 (pc1, 2026-10-26): "reset 后他出现在我后面了，应该在前面，然后 UI 那个音调的文字也显示反的".
+Taste profile D8 / D9 / D10; the whole UI was audited (`../spatial-app-factory/apps/bianzhong/build/ui-audit.md`).
+
+- **Placement from the head of this moment** (`domain/usecase/HeadFrame.kt`): the placing ghost starts 2.5 m along
+  the head's level heading (yaw only; pitch / roll ignored, steep gazes use the head's up vector), its front to the
+  user. The pointer's floor point steers it only within 70 degrees of the heading: on the headset an idle controller
+  still reports a pose, and 0.1.0 let its backward ray put the ghost (and, on a pinch, the rack) behind the user.
+  A floor tap behind the user places at the ghost instead. `place=auto` uses the same rule.
+- **Recenter**: SDK 6.1 has no public recenter callback (pico-dev-knowledge: none found). `RecenterDetector` reads it
+  from the head pose: a 45-degree level turn or a 0.75 m jump between two frames under 150 ms apart. On a jump, and
+  1.5 s after coming back to the front (the HMD frame can switch late, pico-dev-knowledge experience "warm resume ...
+  pre-recenter HMD height"), the panels re-park, the placing ghost restarts ahead, and a placed rack more than
+  70 degrees (jump) / 100 degrees (resume) off the heading moves straight ahead (`ChimeEvent.RackRecentered`, log
+  `RECENTER reason=... rack=ahead|kept`). A rack still in front keeps its wall. Debug: `recenter=1`.
+- **Name plates upright** (`domain/usecase/PlateFacing.kt`): the engine samples a bitmap with v = 0 at its bottom
+  row (the bronze texture was already drawn flipped for this; Light Planner / Sky Dome hit the same); the plate quad
+  gave its top edge v = 0, so every plate was upside down. Top edge v = 1 now; plates turn about the vertical only.
+- **Panel clear of the lower tier** (`domain/usecase/PanelClearance.kt`): with the rack 2.5 m ahead the 24-degree
+  rest put the control panel over the B1 / B2 plates and the Follow form over the B2 drum. The Follower's designed
+  elevation is capped so the panel's top edge stays 1.5 degrees under the lowest plate / mouth seen from the head
+  (still 40 degrees at most); it slides there when the rack moves or the form changes.
+- **Dialog** 10 degrees under the level gaze (was eye level), from the level heading.
+- Tests: `HeadFrameTest` (turn 0 / 90 / 180 / -90 / 45 / 225 degrees then reset: rack straight ahead facing the user;
+  heading ignores pitch / roll; pointer behind; recenter jump vs fast turn; plate UVs; plates face the viewer,
+  +X to their right, upright, no reflection) and `PanelClearanceTest`. `gradlew testDebugUnitTest`: 16 / 16.
+
 ## The rack and the bells
 
 - Rack coordinates: origin on the floor below the lower beam, +X to the viewer's right, +Z towards the viewer.
@@ -67,7 +95,7 @@ the done wave and stop / exit are one-shot `ChimeUiEffect`s. Per-frame work live
 - Decals (3 per bell, hidden by default): hover 60 %, Follow target breathing 0.3 - 0.8 at 1 Hz, strike flash
   100 % for 0.12 s, the first-run coach breathes B6's centre then side once (1.2 s each).
 - Plates: one textured quad per bell 6 cm below the mouth, width max(0.22 x height, 9 cm), turned about the
-  vertical to the head; "宫 C4 | 角 E4" (Chinese) / "C4 | E4" (English); the struck / hovered / target half goes gold.
+  vertical to the head (`PlateFacing`; top edge v = 1, see v0.1.1); "宫 C4 | 角 E4" (Chinese) / "C4 | E4" (English); the struck / hovered / target half goes gold.
 - Swing: damped, 2.5 degrees (lower) / 4 degrees (upper), period 1.2 s, gone in 1.5 s, strokes add up; ripples
   0.2 -> 1.2 x width in 0.4 s on the face that was hit.
 - Sound: `tools/synth_bells.py` -> 24 wav (6.8 MB, stored uncompressed): six partials 1.00 / 1.52 / 2.06 / 2.75 /
@@ -102,8 +130,9 @@ the done wave and stop / exit are one-shot `ChimeUiEffect`s. Per-frame work live
 ## Panels (all SpatialUI inside PicoTheme; no Material)
 
 Pooled attachment panels (`PanelSpec`), 1 dp = 0.8 mm at scale 1: `controlPanel` 400 x 168 and `followPanel`
-400 x 264 at 0.75 (lazy follow 18 degrees left, 24 - 40 degrees below the horizon, 0.6 m), `menuPanel` 256 x 248
-above it, `dialogPanel` 400 x 236 at 1.125 0.9 m ahead, `snackPanel` 560 x 56 head-locked 14 degrees up.
+400 x 264 at 0.75 (lazy follow 18 degrees left, 24 - 40 degrees below the horizon, 0.6 m, and under the lower
+tier's plates: `PanelClearance`), `menuPanel` 256 x 248 above it, `dialogPanel` 400 x 236 at 1.125 0.9 m ahead
+10 degrees down, `snackPanel` 560 x 56 head-locked 14 degrees up (clear of the drums and the panel).
 Dialogs and the snackbar are self-built (system dialog / snackbar compose nothing in a Stage). Copy:
 `res/values` (en) and `res/values-zh`, read through `rs()` so the language switches without a restart.
 
