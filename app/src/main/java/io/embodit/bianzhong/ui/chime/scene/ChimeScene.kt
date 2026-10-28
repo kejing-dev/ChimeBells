@@ -782,13 +782,14 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         val key = "${planeTracker.count}|${state.scale}|${state.wallMin}|${state.forceWall}|${ChimeLog.f(fy)}"
         if (key == framesKey) return
         framesKey = key
-        val walls = snapRule.walls(planeTracker.all, fy, snapRule.floorCenter(planeTracker.all))
+        val planes = if (state.planesBlocked) emptyList() else planeTracker.all
+        val walls = snapRule.walls(planes, fy, snapRule.floorCenter(planes))
         val min = if (state.forceWall) 0f else state.wallMin
         frames = snapRule.frames(walls, state.scale, head.position, min, if (state.forceWall) 64 else WallSnapUseCase.MAX_FRAMES)
         ChimeLog.i("WALLS merged=${walls.size} lengths=${walls.joinToString(",") { ChimeLog.f(it.length) }} frames=${frames.size} min=${ChimeLog.f(min)}")
         if (frames.size != framesSent) {
             framesSent = frames.size
-            sink(ChimeEvent.PlanesChanged(floorY, ceilingY, frames.size))
+            sink(ChimeEvent.PlanesChanged(floorY, ceilingY, frames.size, virtual = realFloorY == null && floorY != null))
         }
     }
 
