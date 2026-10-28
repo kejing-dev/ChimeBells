@@ -134,6 +134,11 @@ internal class RackView(parent: Entity, private val materials: SceneMaterials, p
         root.setLocal(position = pose.origin, rotation = pose.rotation, scale = Vec3(pose.scale, pose.scale, pose.scale))
     }
 
+    /** D14 (v0.1.2): see-through while the user stands in the rack. */
+    fun setFaded(faded: Boolean) {
+        root.setOpacity(if (faded) FADED_OPACITY else 1f)
+    }
+
     fun swing(i: Int, rad: Float) {
         bells[i].pivot.setLocal(rotation = Bells.lean(rad))
     }
@@ -211,6 +216,7 @@ internal class RackView(parent: Entity, private val materials: SceneMaterials, p
 
     companion object {
         const val PLATE_ASPECT = 0.28f
+        const val FADED_OPACITY = 0.35f
         const val PLATE_DROP_M = 0.06f
 
         fun plateWidth(spec: BellSpec): Float = maxOf(0.22f * spec.heightM, 0.09f)

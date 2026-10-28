@@ -46,13 +46,14 @@ import kotlin.math.abs
 private const val FADE_IN_MS = 150
 
 /**
- * The More menu (256 x 248 dp at 0.75, S10), popping up above the More key: note names, language,
- * size, then Move rack and Exit. Segments act in place and leave the menu open; Move rack closes it.
+ * The More menu (256 x 344 dp at 0.75, S10), popping up above the More key: note names, language,
+ * size, volume (v0.1.2, D15), then Bring here (D14), Move rack and Exit. Segments act in place and leave the
+ * menu open; Bring here and Move rack close it.
  */
 @Composable
 internal fun MoreMenu(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit) {
     val (w, h) = PanelSpec.MENU_SIZE
-    Glass(w.dp, h.dp, corner = 24.dp, material = Material.Thick, padding = 12.dp, spacing = 8.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language)) {
+    Glass(w.dp, h.dp, corner = 24.dp, material = Material.Thick, padding = 12.dp, spacing = 8.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.volume)) {
         if (!filled) return@Glass
         MenuRow(rs(R.string.menu_labels)) {
             Segments(
@@ -85,6 +86,18 @@ internal fun MoreMenu(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent
                 itemWidth = 76.dp,
                 height = 40.dp,
             )
+        }
+        MenuRow(rs(R.string.menu_volume)) {
+            Segments(
+                items = listOf("vol_low" to rs(R.string.vol_low), "vol_mid" to rs(R.string.vol_mid), "vol_high" to rs(R.string.vol_high)),
+                selected = state.volume,
+                onSelect = { onEvent(ChimeEvent.VolumeSelected(it)) },
+                itemWidth = 50.dp,
+                height = 40.dp,
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth().height(KeyHeight), verticalAlignment = Alignment.CenterVertically) {
+            WordButton("menu_bring", rs(R.string.menu_bring), { onEvent(ChimeEvent.BringClicked) }, minWidth = 152.dp, height = 44.dp, iconRes = R.drawable.ic_hand, enabled = state.room.placed, modifier = Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth().height(KeyHeight), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             WordButton("menu_replace", rs(R.string.menu_replace), { onEvent(ChimeEvent.ReplaceClicked) }, minWidth = 152.dp, height = 44.dp, iconRes = R.drawable.ic_move, modifier = Modifier.weight(1f))
@@ -157,6 +170,7 @@ private fun snackText(s: SnackUi, state: ChimeUiState): String =
         SnackKind.NO_WALL -> rs(R.string.snack_no_wall, if (state.scale < 1f) "1.3 m" else "2.5 m")
         SnackKind.LOW_CEILING -> rs(R.string.snack_low_ceiling)
         SnackKind.SNAPPED -> rs(R.string.snack_snapped)
+        SnackKind.VIRTUAL_FLOOR -> rs(R.string.snack_virtual_floor)
     }
 
 /**
@@ -201,6 +215,7 @@ internal fun SnackPanel(snack: SnackUi?, state: ChimeUiState, applied: Float = 1
                             SnackKind.NO_WALL -> R.drawable.ic_wall
                             SnackKind.LOW_CEILING -> R.drawable.ic_ceiling
                             SnackKind.SNAPPED -> R.drawable.ic_check
+                            SnackKind.VIRTUAL_FLOOR -> R.drawable.ic_floor
                         }
                     ),
                 contentDescription = null,

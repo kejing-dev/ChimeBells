@@ -6,13 +6,15 @@ import android.media.SoundPool
 import android.os.SystemClock
 import io.embodit.bianzhong.domain.model.Bells
 import io.embodit.bianzhong.domain.model.Zone
+import io.embodit.bianzhong.domain.usecase.StrokeGain
 import io.embodit.bianzhong.platform.ChimeLog
 
 /**
  * The bell strokes (design `audio`): 24 pre-rendered modal-synthesis wavs (`tools/synth_bells.py`,
  * assets/bells, stored uncompressed) played through one SoundPool with 8 voices. A new stroke of a bell
  * does not cut the one still ringing. Left / right volumes of the ringing voices follow the bell's
- * direction from the head every frame ([pan]); distance does not attenuate.
+ * direction from the head every frame ([pan]); distance does not attenuate. Every voice is scaled by the master
+ * level and a polyphony share ([StrokeGain], v0.1.2 / D15); muted, no stroke plays.
  * Main thread only; [release] on every path that ends the scene.
  */
 class BellAudio(context: Context) {
@@ -27,6 +29,17 @@ class BellAudio(context: Context) {
     private val sounds = HashMap<String, Int>()
     private val loaded = HashSet<Int>()
     private val voices = ArrayList<Voice>()
+    private var level = 1
+    private var muted = false
+    private var appliedShare = 1f
+
+    /** Master level 0..2 and mute (from the UI state, remembered there). */
+    fun setLevel(muted: Boolean, level: Int) {
+        if (muted == this.muted && level == this.level) return
+        this.muted = muted
+        this.level = level
+        if (muted) stopAll() else applyAll()
+    }
 
     init {
         pool.setOnLoadCompleteListener { _, id, status -> if (status == 0) loaded += id }
@@ -46,13 +59,18 @@ class BellAudio(context: Context) {
 
     /** Plays a stroke at the given left / right volumes; false when the sound is not loaded yet. */
     fun play(bell: Int, zone: Zone, left: Float, right: Float): Boolean {
+        if (muted) return false
         val id = sounds[key(bell, zone)] ?: return false
         if (id !in loaded) return false
-        val stream = pool.play(id, left, right, 1, 0, 1f)
-        if (stream == 0) return false
         val now = SystemClock.elapsedRealtime()
         voices.removeAll { it.endsAtMs < now }
+        val ringing = (voices.size + 1).coerceAtMost(MAX_STREAMS)
+        val (l, r) = StrokeGain.volumes(left, right, level, muted, ringing)
+        val stream = pool.play(id, l, r, 1, 0, 1f)
+        if (stream == 0) return false
         voices += Voice(stream, bell, now + lengthMs(bell), left, right)
+        // the voices already ringing step down to the new share
+        if (StrokeGain.share(ringing) != appliedShare) applyAll()
         return true
     }
 
@@ -61,13 +79,26 @@ class BellAudio(context: Context) {
         if (voices.isEmpty()) return
         val now = SystemClock.elapsedRealtime()
         voices.removeAll { it.endsAtMs < now }
+        val share = StrokeGain.share(voices.size)
         for (v in voices) {
             val (l, r) = volumes(v.bell) ?: continue
-            if (kotlin.math.abs(l - v.left) < 0.02f && kotlin.math.abs(r - v.right) < 0.02f) continue
+            if (share == appliedShare && kotlin.math.abs(l - v.left) < 0.02f && kotlin.math.abs(r - v.right) < 0.02f) continue
             v.left = l
             v.right = r
-            pool.setVolume(v.stream, l, r)
+            val (vl, vr) = StrokeGain.volumes(l, r, level, muted, voices.size)
+            pool.setVolume(v.stream, vl, vr)
         }
+        appliedShare = share
+    }
+
+    private fun applyAll() {
+        val now = SystemClock.elapsedRealtime()
+        voices.removeAll { it.endsAtMs < now }
+        for (v in voices) {
+            val (vl, vr) = StrokeGain.volumes(v.left, v.right, level, muted, voices.size)
+            pool.setVolume(v.stream, vl, vr)
+        }
+        appliedShare = StrokeGain.share(voices.size)
     }
 
     fun stopAll() {

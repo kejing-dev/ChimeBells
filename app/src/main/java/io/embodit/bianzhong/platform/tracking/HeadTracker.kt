@@ -6,6 +6,7 @@ import com.pico.spatial.tracking.hmd.HMDTrackingProvider
 import io.embodit.bianzhong.domain.model.BlockReason
 import io.embodit.bianzhong.domain.model.Quat4
 import io.embodit.bianzhong.domain.model.Vec3
+import io.embodit.bianzhong.domain.usecase.HeadFrame
 import io.embodit.bianzhong.domain.usecase.ViewPose
 import io.embodit.bianzhong.platform.ChimeLog
 
@@ -23,6 +24,15 @@ data class HeadPose(val position: Vec3, val rotation: Quat4) {
 
     val view: ViewPose
         get() = ViewPose(position, rotation)
+
+    /**
+     * A real head sample, not the provider's placeholder. Going to the background (HOME, the system dialog) the
+     * provider hands out one or more frames of exactly the origin with the identity rotation before ON_STOP
+     * (QA round 2, S18: `RECENTER reason=jump head=(0.0000, 0.0000, 0.0000)`); a real head is never at the
+     * exact Stage origin.
+     */
+    val plausible: Boolean
+        get() = HeadFrame.plausible(position, rotation)
 }
 
 /**
@@ -71,6 +81,10 @@ class HeadTracker {
             else -> null
         }
 
+    /** Elapsed-realtime of the last real (plausible) sample. */
+    val validAtMs: Long
+        get() = lastValidMs
+
     /** True when tracking has given no valid pose for a while. */
     fun lost(nowMs: Long): Boolean = forceLost || (provider != null && last != null && nowMs - lastValidMs > LOST_AFTER_MS)
 
@@ -85,7 +99,8 @@ class HeadTracker {
                 Vec3(position.x, position.y, position.z),
                 Quat4(rotation.x, rotation.y, rotation.z, rotation.w),
             )
-        if (!sample.position.isFinite()) return last
+        // a placeholder (origin) frame is not a pose: keep the last real one, and let a long run of them count as lost
+        if (!sample.plausible) return last ?: sample.takeIf { it.position.isFinite() && it.rotation.isFinite() }
         last = sample
         lastValidMs = SystemClock.elapsedRealtime()
         return sample

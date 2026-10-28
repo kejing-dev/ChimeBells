@@ -34,7 +34,7 @@
     <string name="hint_placing">看向地面捏一下放下 · 摇杆左右转动</string>
     <string name="hint_near">再远一点</string>
     <string name="hint_snapped">已对齐墙边 · 捏一下放下</string>
-    <string name="hint_free">看着钟捏一下 · 正中、侧边是两个音</string>
+    <string name="hint_free">看着钟捏一下 · 按住可拖动，摇杆左右转动</string>
     <string name="hint_pick">选一首，听一遍或跟着敲</string>
     <string name="hint_follow">跟着亮的敲</string>
     <string name="hint_demo">听一听</string>
@@ -60,4 +60,15 @@
     <string name="snack_no_wall">没有 %1$s 长的墙，可自由摆放，或在更多里缩到 1:2</string>
     <string name="snack_low_ceiling">天花板偏低，可在更多里缩到 1:2</string>
     <string name="snack_snapped">已对齐墙边</string>
+    <string name="action_mute">静音</string>
+    <string name="label_muted">已静音</string>
+    <string name="menu_volume">音量</string>
+    <string name="vol_low">低</string>
+    <string name="vol_mid">中</string>
+    <string name="vol_high">高</string>
+    <string name="menu_bring">移到面前</string>
+    <string name="floor_down">地面 ↓</string>
+    <string name="floor_up">地面 ↑</string>
+    <string name="hint_virtual">虚拟地面：用 地面 ↑↓ 对齐地板 · 捏一下放下</string>
+    <string name="snack_virtual_floor">没找到地面，先用虚拟地面</string>
 </resources>

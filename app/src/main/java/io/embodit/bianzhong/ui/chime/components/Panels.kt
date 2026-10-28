@@ -38,6 +38,9 @@ import io.embodit.bianzhong.ui.chime.scene.PanelSpec
 /** Disabled look of the panel while the room is not ready (design S0 / S1: LocalDisableAlpha 0.3). */
 private const val DISABLED_ALPHA = 0.3f
 
+/** One press of Lower / Raise moves the virtual floor this far. */
+private const val FLOOR_STEP_M = 0.05f
+
 /**
  * The control panel, short form (400 x 168 dp at 0.75; S0, S1, S2, S2a, S17, S3, S13, S14): title row
  * "编钟" · 1:2 chip · More; the mode segments (or, while placing, Turn 45 and "Lined up"); the hint line.
@@ -46,14 +49,18 @@ private const val DISABLED_ALPHA = 0.3f
 @Composable
 internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit) {
     val (w, h) = PanelSpec.CONTROL_SIZE
-    Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language)) {
+    Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual)) {
         if (!filled) return@Glass
         val ready = state.room != Room.STARTING && state.room != Room.FINDING && state.dialog == null
         Title(state, ready, onEvent)
         if (state.room == Room.PLACING) {
             Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 WordButton("turn45", rs(R.string.action_turn45), { onEvent(ChimeEvent.Turn45Clicked) }, minWidth = 128.dp, height = 40.dp, iconRes = R.drawable.ic_rot_cw)
-                if (state.snapped) {
+                if (state.floorVirtual) {
+                    // D7 (v0.1.2): the virtual floor is nudged 5 cm per press to meet the real one
+                    WordButton("floor_down", rs(R.string.floor_down), { onEvent(ChimeEvent.FloorNudged(-FLOOR_STEP_M)) }, minWidth = 104.dp, height = 40.dp)
+                    WordButton("floor_up", rs(R.string.floor_up), { onEvent(ChimeEvent.FloorNudged(FLOOR_STEP_M)) }, minWidth = 104.dp, height = 40.dp)
+                } else if (state.snapped) {
                     Icon(painter = painterResource(R.drawable.ic_check), contentDescription = null, modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.labelPrimary)
                     Text(text = rs(R.string.snapped_small), color = PicoTheme.colorScheme.labelPrimary, style = ChimeType.figure, maxLines = 1)
                 }
@@ -75,7 +82,7 @@ internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeE
 @Composable
 internal fun FollowPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit) {
     val (w, h) = PanelSpec.FOLLOW_SIZE
-    Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language)) {
+    Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual)) {
         if (!filled) return@Glass
         Title(state, true, onEvent)
         Row(modifier = Modifier.fillMaxWidth().height(40.dp)) { ModeSegments(state, true, onEvent) }
@@ -127,6 +134,15 @@ private fun Title(state: ChimeUiState, ready: Boolean, onEvent: (ChimeEvent) -> 
         if (state.scale < 1f) {
             Chip(label = { Text(text = rs(R.string.chip_half), maxLines = 1, softWrap = false) }, onClick = { onEvent(ChimeEvent.MoreClicked) }, modifier = Modifier.probe("chip_half"))
         }
+        // D15 (v0.1.2): mute in plain sight on the main panel, worded (B19), remembered
+        WordButton(
+            "mute",
+            rs(if (state.muted) R.string.label_muted else R.string.action_mute),
+            { onEvent(ChimeEvent.MuteClicked) },
+            primary = state.muted,
+            minWidth = 96.dp,
+            iconRes = if (state.muted) R.drawable.ic_mute else R.drawable.ic_volume,
+        )
         Key("more", R.drawable.ic_more, rs(R.string.action_more), enabled = ready) { onEvent(ChimeEvent.MoreClicked) }
     }
 }
@@ -152,6 +168,7 @@ private fun HintRow(state: ChimeUiState) {
             state.room == Room.FINDING || state.room == Room.NO_FLOOR -> rs(R.string.hint_finding)
             state.room == Room.BLOCKED -> rs(R.string.hint_starting)
             state.room == Room.PLACING && state.tooClose -> rs(R.string.hint_near)
+            state.room == Room.PLACING && state.floorVirtual -> rs(R.string.hint_virtual)
             state.room == Room.PLACING && state.snapped -> rs(R.string.hint_snapped)
             state.room == Room.PLACING -> rs(R.string.hint_placing)
             state.room == Room.DONE -> rs(R.string.hint_done)

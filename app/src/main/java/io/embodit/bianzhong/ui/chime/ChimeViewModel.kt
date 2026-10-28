@@ -80,6 +80,14 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
     private var wallMinOverride: Float? = null
     private var ceilingOverride: Float? = null
     private var floorTimeoutS = 60
+    private var virtualAfterS = VIRTUAL_FLOOR_AFTER_S
+    private var virtualFloorOn = false
+    private var floorVirtual = false
+    private var floorOffsetM = 0f
+    private var planesBlocked = false
+    private var virtualJob: Job? = null
+    private var muted = false
+    private var volume = 1
     private var planesOn = true
     private var background = false
     private var demoStroke: io.embodit.bianzhong.domain.model.Stroke? = null
@@ -99,6 +107,8 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         language = LanguagePref.fromTag(prefs.getString(KEY_LANGUAGE, "system"))
         scale = if (prefs.getInt(KEY_SCALE, 1) == 2) 0.5f else 1f
         coachSeen = prefs.getBoolean(KEY_COACH, false)
+        muted = prefs.getBoolean(KEY_MUTED, false)
+        volume = prefs.getInt(KEY_VOLUME, 1).coerceIn(0, 2)
         publish()
     }
 
@@ -112,6 +122,9 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 floorY = event.floorY
                 ceilingY = event.ceilingY
                 frames = event.frames
+                if (floorVirtual && !event.virtual && event.floorY != null) ChimeLog.i("FLOOR real floor found, virtual floor off")
+                floorVirtual = event.virtual && event.floorY != null
+                if (!floorVirtual && event.floorY != null) virtualFloorOn = false
                 if (event.floorY != null && (room == Room.FINDING || room == Room.STARTING)) enterPlacing()
                 updateNoWall()
             }
@@ -137,6 +150,12 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                     } else {
                         place(pose)
                     }
+                }
+            }
+            is ChimeEvent.RackMoved -> {
+                if (room.placed && rack != null) {
+                    rack = event.pose.copy(scale = scale)
+                    ChimeLog.i("PLACE moved center=${ChimeLog.pos(event.pose.center)} yaw=${ChimeLog.f(Math.toDegrees(event.pose.yaw.toDouble()).toFloat(), 1)}")
                 }
             }
             is ChimeEvent.RackRecentered -> {
@@ -203,6 +222,26 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 menuOpen = false
                 if (room.placed || room == Room.PLACING) replace()
             }
+            ChimeEvent.BringClicked -> {
+                menuOpen = false
+                if (room.placed && rack != null) emit(ChimeUiEffect.BringRack)
+            }
+            ChimeEvent.MuteClicked -> {
+                muted = !muted
+                prefs.edit().putBoolean(KEY_MUTED, muted).apply()
+                if (muted) emit(ChimeUiEffect.StopSounds)
+                ChimeLog.i("AUDIO muted=$muted")
+            }
+            is ChimeEvent.VolumeSelected -> {
+                volume = event.level.coerceIn(0, 2)
+                prefs.edit().putInt(KEY_VOLUME, volume).apply()
+                ChimeLog.i("AUDIO volume=$volume")
+            }
+            is ChimeEvent.FloorNudged -> {
+                if (!floorVirtual || room != Room.PLACING) return
+                floorOffsetM = (floorOffsetM + event.deltaM).coerceIn(-FLOOR_NUDGE_MAX_M, FLOOR_NUDGE_MAX_M)
+                ChimeLog.i("FLOOR virtual offset=${ChimeLog.f(floorOffsetM)}")
+            }
             ChimeEvent.ExitClicked -> exit()
             ChimeEvent.RetryClicked -> {
                 when (dialog) {
@@ -254,6 +293,22 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
             enterPlacing()
             return
         }
+        virtualFloorOn = false
+        floorOffsetM = 0f
+        // D7 (v0.1.2, QA q2-2): no floor within 5 s -> a virtual floor at head height - 1.55 m, straight into placing;
+        // a real floor found later takes over. The 60 s "No floor found" dialog stays only for a session with no head.
+        virtualJob?.cancel()
+        val after = virtualAfterS
+        virtualJob =
+            viewModelScope.launch {
+                delay(after * 1000L)
+                if (room == Room.FINDING && floorY == null) {
+                    virtualFloorOn = true
+                    ChimeLog.i("FLOOR none after ${after}s: virtual floor")
+                    showSnack(SnackKind.VIRTUAL_FLOOR, VIRTUAL_SNACK_MS)
+                    publish()
+                }
+            }
         val timeout = floorTimeoutS
         findJob =
             viewModelScope.launch {
@@ -269,6 +324,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
 
     private fun enterPlacing() {
         findJob?.cancel()
+        virtualJob?.cancel()
         room = Room.PLACING
         planesOn = true
         planesOffJob?.cancel()
@@ -500,6 +556,12 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 demoStroke = if (room == Room.DEMO) demoStroke else null,
                 struckUntilMs = struckUntilMs,
                 floorKnown = floorY != null,
+                floorVirtual = floorVirtual,
+                virtualFloorOn = virtualFloorOn,
+                floorOffsetM = floorOffsetM,
+                planesBlocked = planesBlocked,
+                muted = muted,
+                volume = volume,
             )
         val line = stateLine()
         if (line != lastStateLine) {
@@ -574,6 +636,11 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         o.put("ceilingY", ceilingY?.toDouble() ?: JSONObject.NULL)
         o.put("frames", frames)
         o.put("planesOn", planesOn)
+        o.put("floorVirtual", floorVirtual)
+        o.put("floorOffset", floorOffsetM.toDouble())
+        o.put("planesBlocked", planesBlocked)
+        o.put("muted", muted)
+        o.put("volume", volume)
         o.put("coachSeen", coachSeen)
         rack?.let { r ->
             o.put("rack", JSONObject().put("center", ChimeLog.pos(r.center)).put("yawDeg", Math.toDegrees(r.yaw.toDouble())).put("scale", r.scale.toDouble()))
@@ -605,6 +672,26 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 forcedNear = v == "1" || v == "on"
             }
             "floor_timeout" -> floorTimeoutS = v.toIntOrNull()?.coerceIn(1, 600) ?: 60
+            "floor_virtual_s" -> virtualAfterS = v.toIntOrNull()?.coerceIn(1, 600) ?: VIRTUAL_FLOOR_AFTER_S
+            // QA: block plane detection and go back to S1 (the no-floor path): the virtual floor comes in 5 s
+            "planes" -> {
+                planesBlocked = v == "off" || v == "0"
+                if (planesBlocked) {
+                    // back to S1 with no floor known: the virtual floor comes in 5 s
+                    stopDemo()
+                    rack = null
+                    floorY = null
+                    floorVirtual = false
+                    virtualFloorOn = false
+                    dialog = null
+                    menuOpen = false
+                    enterFinding()
+                }
+            }
+            "floor_nudge" -> onEvent(ChimeEvent.FloorNudged(v.toFloatOrNull() ?: 0f))
+            "mute" -> if ((v == "1" || v == "on") != muted) onEvent(ChimeEvent.MuteClicked)
+            "volume" -> onEvent(ChimeEvent.VolumeSelected(v.toIntOrNull() ?: 1))
+            "bring" -> onEvent(ChimeEvent.BringClicked)
             "wallmin" -> {
                 val m = v.toFloatOrNull()
                 forcedNoWall = m != null && m >= 99f
@@ -816,6 +903,11 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         private const val KEY_LANGUAGE = "language"
         private const val KEY_SCALE = "scale"
         private const val KEY_COACH = "coachSeen"
+        private const val KEY_MUTED = "muted"
+        private const val KEY_VOLUME = "volume"
+        private const val VIRTUAL_FLOOR_AFTER_S = 5
+        private const val VIRTUAL_SNACK_MS = 5000L
+        private const val FLOOR_NUDGE_MAX_M = 0.6f
         private const val LOW_CEILING_M = 2.30f
         private const val NO_WALL_AFTER_MS = 8000L
         private const val PLANES_OFF_MS = 15_000L

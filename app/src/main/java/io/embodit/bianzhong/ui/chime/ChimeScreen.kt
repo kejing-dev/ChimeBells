@@ -69,13 +69,19 @@ fun ChimeScreen() {
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, viewModel) {
+    DisposableEffect(lifecycleOwner, viewModel, scene) {
         val observer =
             object : LifecycleEventObserver {
                 override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
                     when (event) {
-                        Lifecycle.Event.ON_STOP -> viewModel.onEvent(ChimeEvent.WentBackground)
-                        Lifecycle.Event.ON_START -> viewModel.onEvent(ChimeEvent.CameForeground)
+                        Lifecycle.Event.ON_STOP -> {
+                            scene.onForeground(false)
+                            viewModel.onEvent(ChimeEvent.WentBackground)
+                        }
+                        Lifecycle.Event.ON_START -> {
+                            scene.onForeground(true)
+                            viewModel.onEvent(ChimeEvent.CameForeground)
+                        }
                         else -> Unit
                     }
                 }
@@ -97,6 +103,7 @@ fun ChimeScreen() {
                 is ChimeUiEffect.Strike -> scene.strike(effect.bell, effect.zone, effect.local, effect.user)
                 ChimeUiEffect.Wave -> scene.wave()
                 ChimeUiEffect.StopSounds -> scene.stopSounds()
+                ChimeUiEffect.BringRack -> scene.bringRack()
                 ChimeUiEffect.Click -> runCatching { audio.playSystem(SpatialSoundEffect.OpClick) }.onFailure { ChimeLog.w("SOUND failed: $it") }
             }
         }

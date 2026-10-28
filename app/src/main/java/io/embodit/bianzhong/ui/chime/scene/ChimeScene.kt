@@ -120,11 +120,17 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private val recenter = RecenterDetector()
     private var clearanceKey: Any? = null
     private var frontCheckAtMs = NEVER
+    private var frontCheckUntilMs = NEVER
+    private var inBackground = false
 
     // ---- room facts (planes)
     private var lastPlaneCount = -1
     private var lastPlanesEmitMs = 0L
     private var floorY: Float? = null
+    /** The detected floor; [floorY] is this, or the virtual stand-in (D7, v0.1.2). */
+    private var realFloorY: Float? = null
+    /** Head height minus 1.55 m, taken once when the virtual floor comes in. */
+    private var virtualBaseY: Float? = null
     private var ceilingY: Float? = null
     private var frames: List<SnapFrame> = emptyList()
     private var framesKey = ""
@@ -149,6 +155,14 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private var turnTo = 0f
     private var turnStartMs = NEVER
     private var triggerDown = false
+
+    // ---- the placed rack: drag (controller ray + trigger, or gaze / hand pinch) and thumbstick turn (D1 / D14, v0.1.2)
+    private var dragging = false
+    private var dragPose: RackPose? = null
+    private var dragGrab: Vec3? = null
+    private var dragMoved = false
+    private var stickTurning = false
+    private var rackFaded = false
 
     // ---- bells
     private val impulses = Array(12) { ArrayList<Pair<Long, Float>>() }
@@ -374,8 +388,9 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         val placed = state.room.placed && state.rack != null
         rackView.setShown(placed)
         if (placed) {
-            if (force || previous.rack != state.rack) rackView.place(state.rack!!)
+            if (dragPose == null && (force || previous.rack != state.rack)) rackView.place(state.rack!!)
         } else {
+            endRackAdjust(commit = false)
             pointerHover = null
             ripples?.clear()
         }
@@ -398,22 +413,39 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         }
         if (state.coach && !previous.coach) coachStartMs = SystemClock.elapsedRealtime()
         if (!state.coach) coachStartMs = NEVER
-        if (state.background && !previous.background) audio?.stopAll()
-        // back in front: the head may come from a recentred frame (late by up to ~0.8 s, pico-dev-knowledge
-        // "warm resume ... pre-recenter HMD"), so look again 1.5 s later and bring a rack left behind back ahead
-        if (!state.background && previous.background) {
-            recenter.reset()
-            frontCheckAtMs = SystemClock.elapsedRealtime() + FRONT_CHECK_DELAY_MS
-        }
+        audio?.setLevel(state.muted, state.volume)
+        if (state.muted && !previous.muted) audio?.stopAll()
         if (previous.scale != state.scale || previous.wallMin != state.wallMin || previous.forceWall != state.forceWall) framesKey = ""
         if (previous.dialog != null && state.dialog == null) planesFailed = false
         syncPanels(state)
     }
 
+    /**
+     * ON_STOP / ON_START, straight from the lifecycle observer (v0.1.2, QA q2-1). 0.1.1 looked for the
+     * background -> foreground transition in [render], but Compose does not recompose while the activity is
+     * stopped, so the scene never saw `background = true` and the check after coming back never ran.
+     */
+    fun onForeground(foreground: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        inBackground = !foreground
+        recenter.reset()
+        if (!foreground) {
+            audio?.stopAll()
+            frontCheckAtMs = NEVER
+            ChimeLog.i("RECENTER watch paused (background)")
+        } else {
+            // the head may come from a recentred frame (late by up to ~0.8 s, pico-dev-knowledge "warm resume ...
+            // pre-recenter HMD"), so look again 1.5 s later, on a real head sample, and bring a rack left behind back ahead
+            frontCheckAtMs = now + FRONT_CHECK_DELAY_MS
+            frontCheckUntilMs = now + FRONT_CHECK_GIVE_UP_MS
+            ChimeLog.i("RECENTER check in ${FRONT_CHECK_DELAY_MS}ms (foreground)")
+        }
+    }
+
     /** Plane detection runs while wanted and in the foreground; a paused tracker keeps what it saw. */
     private fun syncPlanes(state: ChimeUiState) {
         if (stageRoot == null) return
-        val want = state.planesOn && !state.background
+        val want = state.planesOn && !state.background && !state.planesBlocked
         if (want && !planeTracker.running) {
             val ok =
                 planeTracker.start(
@@ -487,7 +519,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         ripples?.fire(bell, point, normal, now)
         val (l, r) = volumes(bell) ?: (1f to 1f)
         val played = audio?.play(bell, zone, l, r) ?: false
-        ChimeLog.i(String.format(Locale.US, "strike=%s,%s,pan=%.2f,%.2f user=%b audio=%s", spec.id, zone.tag, l, r, user, if (played) "ok" else "pending"))
+        ChimeLog.i(String.format(Locale.US, "strike=%s,%s,pan=%.2f,%.2f user=%b audio=%s", spec.id, zone.tag, l, r, user, if (ui.muted) "muted" else if (played) "ok" else "pending"))
     }
 
     /** Follow done: a silent gold ripple on every bell, left to right, 0.1 s apart. */
@@ -528,11 +560,17 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         headTracker.pose()?.let {
             head = it
             hasHead = true
-            if (recenter.feed(now, it.position, it.rotation)) onRecentered("jump", HeadFrame.FRONT_RAD)
+            // only real samples in the foreground count (the provider's origin frames came 0.5 s before ON_STOP)
+            if (!inBackground && it.plausible && recenter.feed(now, it.position, it.rotation)) onRecentered("jump", HeadFrame.FRONT_RAD)
         }
-        if (frontCheckAtMs != NEVER && now >= frontCheckAtMs && hasHead) {
-            frontCheckAtMs = NEVER
-            onRecentered("resume", HeadFrame.BEHIND_RAD)
+        if (frontCheckAtMs != NEVER && now >= frontCheckAtMs && !inBackground) {
+            if (hasHead && head.plausible && headTracker.validAtMs >= frontCheckAtMs - FRONT_CHECK_DELAY_MS) {
+                frontCheckAtMs = NEVER
+                onRecentered("resume", HeadFrame.BEHIND_RAD)
+            } else if (now > frontCheckUntilMs) {
+                frontCheckAtMs = NEVER
+                ChimeLog.i("RECENTER resume check dropped: no real head sample")
+            }
         }
         val rig = rig ?: return
         rig.onFrame(now)
@@ -547,13 +585,17 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
 
         pollTracking(now)
         pollPlanes(now)
+        syncFloor(state)
         if (state.room == Room.PLACING) {
             ghostFrame(state, now, dt)
             triggerFrame(state)
         } else {
             triggerDown = false
         }
-        if (state.room.placed && state.rack != null) bellsFrame(state, now)
+        if (state.room.placed && state.rack != null) {
+            adjustFrame(state, dt)
+            bellsFrame(state, now)
+        }
         redrawPlates(state, now)
         rig.faceViewer(head.position)
     }
@@ -603,7 +645,11 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         }
     }
 
-    private fun pointerRay(): PointerRay = controller.sample()?.ray ?: PointerRay(head.position, head.forward)
+    /**
+     * The controller's ray, or null with no controller: aiming never uses the head's forward (taste profile D1,
+     * v0.1.2). Without a controller the system pointer (gaze + pinch) aims: taps and hover come from it.
+     */
+    private fun pointerRay(): PointerRay? = controller.sample()?.ray
 
     /**
      * The ghost (design `I6`, `I5`, `I3`): footprint centre on the pointer's floor point (smoothed 0.12 s,
@@ -623,14 +669,18 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         // the ghost starts straight ahead of the head (D9); the pointer steers it only while its floor point is in
         // front (an idle controller on the headset still reports a pose, which put the 0.1.0 rack behind the user)
         val ahead = HeadFrame.rackAhead(head.position, head.rotation, fy, state.scale)
-        val ray = pointerRay()
-        val pointed = placeRule.floorPoint(ray.origin, ray.direction, fy)
-        val raw = if (HeadFrame.inFront(head.position, head.rotation, pointed)) pointed else ahead.center
-        val (target, near) = placeRule.clamp(raw, head.position, fy)
+        // without a controller the ghost waits where it is (ahead); a gaze + pinch on the floor places it there
+        val pointed = pointerRay()?.let { ray -> placeRule.floorPoint(ray.origin, ray.direction, fy) }
+        val raw = if (pointed != null && HeadFrame.inFront(head.position, head.rotation, pointed)) pointed else ghostCenter ?: ahead.center
+        val (clamped, near) = placeRule.clamp(raw, head.position, fy)
+        // D14 (v0.1.2): the footprint's nearest point, not its centre, stays 0.8 m from the head; pushed out = red
+        val aimYaw = if (userTurned) ghostYaw else placeRule.yawFacing(clamped, head.position, ghostYaw)
+        val (cleared, pushed) = placeRule.pushClear(RackPose(clamped, aimYaw, state.scale), head.position)
+        val target = cleared.center
         val c0 = ghostCenter
         val center = if (c0 == null) ahead.center else if (dt <= 0f) target else c0.lerp(target, 1f - exp(-dt / FOLLOW_TAU_S))
         ghostCenter = center
-        tooClose = near || state.forcedNear
+        tooClose = near || pushed || state.forcedNear
 
         // turning: the stick (dead zone 0.15, 90 degrees per second at full tilt, smoothed 0.15 s) and Turn 45
         val x = controller.sample()?.stickX ?: 0f
@@ -656,7 +706,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         val snap =
             if (state.forceWall) forcedFrame()
             else if (tooClose) null
-            else placeRule.snap(center, ghostYaw, frames, held, state.scale)
+            else placeRule.snap(center, ghostYaw, frames, held, state.scale)?.takeIf { f -> placeRule.clearance(RackPose(f.center, f.yaw, state.scale), head.position) >= PlacementUseCase.NEAR_M - 0.02f }
         if (snap != null && held == null) ChimeLog.i("SNAP on wall=${ChimeLog.f(snap.wallLength)} center=${ChimeLog.pos(snap.center)}")
         if (snap == null && held != null) ChimeLog.i("SNAP off")
         held = snap
@@ -719,7 +769,12 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     }
 
     /** The ghost's pose when it may be put down, else null (too close, no floor yet). */
-    private fun placeablePose(): RackPose? = if (tooClose) null else shownPose?.let { p -> held?.let { RackPose(it.center, it.yaw, p.scale) } ?: p }
+    private fun placeablePose(): RackPose? {
+        if (tooClose) return null
+        val pose = shownPose?.let { p -> held?.let { RackPose(it.center, it.yaw, p.scale) } ?: p } ?: return null
+        // the shown ghost may still be easing out of the clearance: never put the rack down inside it
+        return if (hasHead && placeRule.clearance(pose, head.position) < PlacementUseCase.NEAR_M - 0.02f) null else pose
+    }
 
     /** Snap frames from the merged walls, recomputed when the planes, the size or the threshold change. */
     private fun refreshFrames(state: ChimeUiState) {
@@ -864,7 +919,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     /** The bell the pointer ray meets first (box around body and shank), its zone and whether it is the left side. */
     private fun hoverFromRay(pose: RackPose, swings: FloatArray): Pair<Hover, Boolean>? {
         if (!hasHead) return null
-        val ray = pointerRay()
+        val ray = pointerRay() ?: return null
         val o = pose.toLocal(ray.origin)
         val d = pose.rotation.conjugate().rotate(ray.direction)
         var best: Pair<Hover, Boolean>? = null
@@ -913,15 +968,150 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         if (now - lastPlanesEmitMs < PLANES_EMIT_MS) return
         lastPlanesEmitMs = now
         lastPlaneCount = count
-        val planes = planeTracker.all
-        floorY = snapRule.floorY(planes)
+        val planes = if (ui.planesBlocked) emptyList() else planeTracker.all
+        realFloorY = snapRule.floorY(planes)
         ceilingY = snapRule.ceilingY(planes)
+        floorY = currentFloor(ui)
         framesKey = ""
         refreshFrames(ui)
         framesSent = frames.size
         val walls = planes.count { it.kind == SurfaceKind.WALL }
-        ChimeLog.i("PLANES n=$count floor=${floorY?.let { ChimeLog.f(it) }} ceiling=${ceilingY?.let { ChimeLog.f(it) }} walls=$walls frames=${frames.size}")
-        sink(ChimeEvent.PlanesChanged(floorY, ceilingY, frames.size))
+        ChimeLog.i("PLANES n=$count floor=${floorY?.let { ChimeLog.f(it) }} real=${realFloorY != null} ceiling=${ceilingY?.let { ChimeLog.f(it) }} walls=$walls frames=${frames.size}")
+        sink(ChimeEvent.PlanesChanged(floorY, ceilingY, frames.size, virtual = realFloorY == null && floorY != null))
+    }
+
+    /** The detected floor, else the virtual one while the ViewModel asks for it (head height - 1.55 m + nudge). */
+    private fun currentFloor(state: ChimeUiState): Float? {
+        realFloorY?.let { return it }
+        if (!state.virtualFloorOn && !state.floorVirtual) {
+            virtualBaseY = null
+            return null
+        }
+        val base = virtualBaseY ?: (if (hasHead && head.plausible) head.position.y - VIRTUAL_EYE_M else null)?.also { virtualBaseY = it } ?: return null
+        return base + state.floorOffsetM
+    }
+
+    /** D7 (v0.1.2): stands the virtual floor in / moves it with the nudge / drops it when planes are blocked. */
+    private fun syncFloor(state: ChimeUiState) {
+        if (state.planesBlocked && realFloorY != null) {
+            realFloorY = null
+            lastPlaneCount = -1
+        }
+        val want = currentFloor(state)
+        if (want == floorY) return
+        floorY = want
+        framesKey = ""
+        ChimeLog.i("FLOOR y=${want?.let { ChimeLog.f(it) }} virtual=${realFloorY == null && want != null}")
+        sink(ChimeEvent.PlanesChanged(floorY, ceilingY, frames.size, virtual = realFloorY == null && want != null))
+    }
+
+    /** A system drag may grab the placed rack by any bell (the bells carry the colliders). */
+    fun isRackEntity(entity: com.pico.spatial.core.ecs.Entity): Boolean = ui.room.placed && ui.rack != null && rack?.bellOf(entity) != null
+
+    /**
+     * Drag start on a bell of the placed rack (`detectSpatialDragGesture`; controller ray + trigger, or gaze / hand
+     * pinch). With a controller the footprint follows the ray's floor point (keeping the grab offset); a hand drags
+     * by its own movement, scaled by the distance.
+     */
+    fun onRackDragStart() {
+        val pose = ui.rack ?: return
+        if (!ui.room.placed || !hasHead) return
+        dragging = true
+        dragMoved = false
+        dragPose = pose
+        val sample = controller.sample()
+        dragGrab =
+            sample?.takeIf { it.pressed || it.trigger > 0.4f }?.let { c ->
+                val fp = placeRule.floorPoint(c.ray.origin, c.ray.direction, pose.center.y)
+                Vec3(pose.center.x - fp.x, 0f, pose.center.z - fp.z)
+            }
+        ChimeLog.i("DRAG start by=${if (dragGrab != null) "controller" else "hand"} center=${ChimeLog.pos(pose.center)}")
+    }
+
+    /** A hand drag step: [stageDelta] metres in Stage space since the last step. */
+    fun onRackDrag(dx: Float, dy: Float, dz: Float) {
+        if (!dragging || dragGrab != null) return
+        val pose = dragPose ?: return
+        val a = toStage(0f, 0f, 0f) ?: return
+        val b = toStage(dx, dy, dz) ?: return
+        val d = Vec3(b.x - a.x, 0f, b.z - a.z)
+        val dist = Vec3(pose.center.x - head.position.x, 0f, pose.center.z - head.position.z).length
+        val gain = (dist / HAND_ARM_M).coerceIn(1f, HAND_GAIN_MAX)
+        moveDragged(pose.copy(center = pose.center + d * gain))
+    }
+
+    fun onRackDragEnd() {
+        if (!dragging) return
+        dragging = false
+        endRackAdjust(commit = true)
+    }
+
+    /** Controller-driven dragging and the thumbstick turn of the placed rack (pointer on the rack, or while dragging). */
+    private fun adjustFrame(state: ChimeUiState, dt: Float) {
+        val view = rack ?: return
+        val base = dragPose ?: state.rack ?: return
+        var pose = base
+        val c = controller.sample()
+        val grab = dragGrab
+        if (dragging && grab != null && c != null) {
+            val fp = placeRule.floorPoint(c.ray.origin, c.ray.direction, base.center.y)
+            if (HeadFrame.inFront(head.position, head.rotation, fp)) pose = pose.copy(center = Vec3(fp.x + grab.x, base.center.y, fp.z + grab.z))
+        }
+        // thumbstick left / right turns the rack about its own vertical while the pointer is on it or it is dragged
+        val x = c?.stickX ?: 0f
+        if ((dragging || pointerHover != null || stickTurning) && abs(x) > STICK_DEAD && dt > 0f) {
+            val rate = -(x - STICK_DEAD * kotlin.math.sign(x)) / (1f - STICK_DEAD) * STICK_RATE_RAD_S
+            pose = pose.copy(yaw = pose.yaw + rate * dt)
+            if (!stickTurning) ChimeLog.i("STICK turn placed rack")
+            stickTurning = true
+        } else if (stickTurning && !dragging) {
+            stickTurning = false
+            endRackAdjust(commit = true)
+            return
+        }
+        if (pose != base) moveDragged(pose)
+        // D14: walking into the rack makes it see-through
+        val faded = hasHead && placeRule.clearance(dragPose ?: state.rack ?: return, head.position) < FADE_NEAR_M
+        if (faded != rackFaded) {
+            rackFaded = faded
+            view.setFaded(faded)
+            ChimeLog.i("RACK faded=$faded")
+        }
+    }
+
+    /** Moves the rack being dragged / turned, kept 0.8 m clear of the head (pushed out) and within 6 m. */
+    private fun moveDragged(pose: RackPose) {
+        val (clear, _) = placeRule.pushClear(pose, head.position)
+        val foot = Vec3(head.position.x, clear.center.y, head.position.z)
+        val off = Vec3(clear.center.x - foot.x, 0f, clear.center.z - foot.z)
+        val p = if (off.length > PlacementUseCase.FAR_M) clear.copy(center = foot + off.normalized() * PlacementUseCase.FAR_M) else clear
+        dragPose = p
+        dragMoved = true
+        rack?.place(p)
+    }
+
+    /** Ends a drag / turn: the ViewModel takes the new pose ([commit]) or the rack goes back to the model's. */
+    private fun endRackAdjust(commit: Boolean) {
+        val p = dragPose
+        dragPose = null
+        dragGrab = null
+        stickTurning = false
+        if (p != null && commit && dragMoved) {
+            ChimeLog.i("DRAG end center=${ChimeLog.pos(p.center)} yaw=${ChimeLog.f(Math.toDegrees(p.yaw.toDouble()).toFloat(), 1)}")
+            sink(ChimeEvent.RackMoved(p))
+        } else {
+            ui.rack?.let { r -> if (ui.room.placed) rack?.place(r) }
+        }
+        dragMoved = false
+    }
+
+    /** More menu "Bring here" (D14): the placed rack straight ahead of the head, facing the user. */
+    fun bringRack() {
+        val r = ui.rack ?: return
+        if (!hasHead) return
+        val pose = HeadFrame.rackAhead(head.position, head.rotation, r.center.y, r.scale)
+        ChimeLog.i("BRING center=${ChimeLog.pos(pose.center)}")
+        sink(ChimeEvent.RackMoved(pose))
     }
 
     private fun pollTracking(now: Long) {
@@ -979,7 +1169,9 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         held?.let { f -> if (Vec3(p.x - f.center.x, 0f, p.z - f.center.z).length < PlacementUseCase.RELEASE_M * maxOf(scale, 0.5f)) return RackPose(f.center, f.yaw, scale) }
         val yaw = if (userTurned) ghostYaw else placeRule.yawFacing(p, head.position, ghostYaw)
         val snap = placeRule.snap(p, yaw, frames, null, scale)
-        return if (snap != null) RackPose(snap.center, snap.yaw, scale) else RackPose(p, yaw, scale)
+        val pose = if (snap != null) RackPose(snap.center, snap.yaw, scale) else RackPose(p, yaw, scale)
+        // D14: a tap whose footprint would come within 0.8 m of the head is refused (the ghost turns red there)
+        return if (placeRule.pushClear(pose, head.position).second) null else pose
     }
 
     /** A Stage point -> the bell's own coordinates (origin at the hanging point, unswung lean). */
@@ -1043,7 +1235,9 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     // debug probe
     // =========================================================================================
 
-    override fun poseLine(): String = "POSE hmd pos=${ChimeLog.pos5(head.position)} ${ChimeLog.quat5(head.rotation)} fwd=${ChimeLog.pos5(head.forward)} valid=$hasHead"
+    override fun poseLine(): String =
+        "POSE hmd pos=${ChimeLog.pos5(head.position)} ${ChimeLog.quat5(head.rotation)} fwd=${ChimeLog.pos5(head.forward)} valid=$hasHead plausible=${head.plausible}" +
+            (ui.rack?.let { " rackClear=${ChimeLog.f(placeRule.clearance(it, head.position))}" } ?: "")
 
     override fun panelLines(): List<String> {
         val rig = rig ?: return emptyList()
@@ -1079,6 +1273,17 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         private const val TURN_MS = 250f
         private const val AUTO_DISTANCE_M = HeadFrame.RACK_AHEAD_M
         private const val FRONT_CHECK_DELAY_MS = 1500L
+        private const val FRONT_CHECK_GIVE_UP_MS = 10_000L
+
+        /** Virtual floor: this far below the eyes (QA r2 suggestion; `place=auto` already used it). */
+        private const val VIRTUAL_EYE_M = 1.55f
+
+        /** A hand drag moves the rack by the hand's movement times distance / arm length (at most 6x). */
+        private const val HAND_ARM_M = 0.5f
+        private const val HAND_GAIN_MAX = 6f
+
+        /** The rack turns see-through when the head comes within this of its footprint (D14). */
+        private const val FADE_NEAR_M = 0.3f
         private val SWING_LOWER_RAD = Math.toRadians(2.5).toFloat()
         private val SWING_UPPER_RAD = Math.toRadians(4.0).toFloat()
         private const val SWING_PERIOD_S = 1.2f

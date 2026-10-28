@@ -61,6 +61,8 @@ data class Quat4(val x: Float, val y: Float, val z: Float, val w: Float) {
 
     fun conjugate() = Quat4(-x, -y, -z, w)
 
+    fun isFinite(): Boolean = x.isFinite() && y.isFinite() && z.isFinite() && w.isFinite()
+
     operator fun times(o: Quat4) =
         Quat4(
             w * o.x + x * o.w + y * o.z - z * o.y,

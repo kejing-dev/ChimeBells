@@ -70,20 +70,31 @@ object HeadFrame {
     }
 
     fun inFront(position: Vec3, rotation: Quat4, point: Vec3, within: Float = FRONT_RAD): Boolean = bearing(position, rotation, point) <= within
+
+    /**
+     * A real head sample (v0.1.2, QA q2-1): finite, and not the exact Stage origin. Going to the background the HMD
+     * provider hands out frames of the origin with the identity rotation (S18 logs `head=(0.0000, 0.0000, 0.0000)`,
+     * about 0.5 s before ON_STOP); 0.1.1 fed those to the recenter detector, which read a jump and moved the rack.
+     */
+    fun plausible(position: Vec3, rotation: Quat4): Boolean = position.isFinite() && rotation.isFinite() && position.length > PLAUSIBLE_M
+
+    const val PLAUSIBLE_M = 1e-3f
 }
 
 /**
  * The system recenter ("reset view") has no public callback in SDK 6.1 (pico-dev-knowledge: none found), so it
  * is read from the head pose: a level turn of 45 degrees or a 0.75 m jump between two frames less than 150 ms
- * apart is not a head movement. Slow frames (idle emulator, about 1 fps) never count.
+ * apart is not a head movement. Slow frames (idle emulator, about 1 fps) never count, nor do placeholder samples
+ * ([HeadFrame.plausible]) or anything while the app is in the background (the scene stops feeding).
  */
 class RecenterDetector {
     private var lastMs = Long.MIN_VALUE
     private var lastPos = Vec3.ZERO
     private var lastYaw = 0f
 
-    /** Feeds one head sample; true when it jumped from the previous one. */
+    /** Feeds one head sample; true when it jumped from the previous one. A placeholder sample is ignored. */
     fun feed(nowMs: Long, position: Vec3, rotation: Quat4): Boolean {
+        if (!HeadFrame.plausible(position, rotation)) return false
         val yaw = HeadFrame.yawOf(HeadFrame.heading(rotation))
         val prevMs = lastMs
         val jumped =

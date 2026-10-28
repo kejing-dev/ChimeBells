@@ -11,6 +11,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.foundation.gesture.TargetEntity
+import com.pico.spatial.ui.foundation.gesture.detectSpatialDragGesture
 import com.pico.spatial.ui.foundation.gesture.detectSpatialTapGesture
 import io.embodit.bianzhong.ui.chime.ChimeEvent
 import io.embodit.bianzhong.ui.chime.ChimeUiState
@@ -37,6 +38,17 @@ internal fun ChimeStage(state: ChimeUiState, scene: ChimeScene, onEvent: (ChimeE
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectSpatialTapGesture(context = context, targetedToEntity = TargetEntity.any()) { value -> scene.onSpatialTap(value) }
+                }
+                // v0.1.2 (D1 / D14): hold and drag the placed rack by any bell (controller ray + trigger, gaze / hand pinch);
+                // its own pointerInput so that taps on the bells still strike (SDK gesture consumption rules)
+                .pointerInput("rackDrag") {
+                    detectSpatialDragGesture(
+                        context = context,
+                        targetedToEntity = TargetEntity.any { scene.isRackEntity(it) },
+                        onDragStart = { _, _ -> scene.onRackDragStart() },
+                        onDragEnd = { scene.onRackDragEnd() },
+                        onDragCancel = { scene.onRackDragEnd() },
+                    ) { value -> scene.onRackDrag(value.dragAmount.x, value.dragAmount.y, value.dragAmount.z) }
                 },
         attachments = {
             AttachmentPanel(PanelSpec.CONTROL) {

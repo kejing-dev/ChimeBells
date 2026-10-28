@@ -13,7 +13,7 @@ object PanelSpec {
 
     val CONTROL_SIZE = 400f to 168f
     val FOLLOW_SIZE = 400f to 264f
-    val MENU_SIZE = 256f to 248f
+    val MENU_SIZE = 256f to 344f
     val DIALOG_SIZE = 400f to 236f
     val SNACK_SIZE = 560f to 56f
 

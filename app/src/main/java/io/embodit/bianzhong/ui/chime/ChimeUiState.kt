@@ -45,6 +45,7 @@ enum class SnackKind {
     NO_WALL, // S17
     LOW_CEILING, // I23
     SNAPPED, // "Lined up with the wall", 0.8 s
+    VIRTUAL_FLOOR, // v0.1.2 (D7): no floor in 5 s, a virtual floor stands in
 }
 
 data class SnackUi(val id: Int, val kind: SnackKind)
@@ -95,6 +96,18 @@ data class ChimeUiState(
     val demoStroke: Stroke? = null,
     val struckUntilMs: Long = 0L,
     val floorKnown: Boolean = false,
+    /** The floor is the virtual stand-in (D7, v0.1.2): no floor was found within 5 s. */
+    val floorVirtual: Boolean = false,
+    /** The scene should stand a virtual floor in (head height - 1.55 m + [floorOffsetM]) while no real one is known. */
+    val virtualFloorOn: Boolean = false,
+    /** User nudge of the virtual floor, metres (+ up). */
+    val floorOffsetM: Float = 0f,
+    /** Debug `planes=off`: plane detection is blocked (the no-floor path on the emulator room). */
+    val planesBlocked: Boolean = false,
+    /** D15 (v0.1.2): bell strokes are silent; remembered. */
+    val muted: Boolean = false,
+    /** D15: master volume level 0 low, 1 medium (default), 2 high; remembered. */
+    val volume: Int = 1,
 ) {
     val strokes: Int
         get() = song.strokes.size
@@ -105,7 +118,8 @@ sealed interface ChimeEvent {
     // ---- scene
     data object SceneReady : ChimeEvent
 
-    data class PlanesChanged(val floorY: Float?, val ceilingY: Float?, val frames: Int) : ChimeEvent
+    /** [virtual]: [floorY] is the virtual stand-in, not a detected floor. */
+    data class PlanesChanged(val floorY: Float?, val ceilingY: Float?, val frames: Int, val virtual: Boolean = false) : ChimeEvent
 
     data object PlaneTrackingFailed : ChimeEvent
 
@@ -113,6 +127,9 @@ sealed interface ChimeEvent {
 
     /** After a recenter the rack was left off the heading: it goes to [pose], straight ahead (D9). */
     data class RackRecentered(val pose: RackPose) : ChimeEvent
+
+    /** The placed rack was dragged / turned to [pose] (D1 / D14, v0.1.2). */
+    data class RackMoved(val pose: RackPose) : ChimeEvent
 
     /** A tap on the floor / trigger while placing: the scene's ghost pose (null = cannot place here). */
     data class PlaceRequested(val pose: RackPose?) : ChimeEvent
@@ -151,6 +168,16 @@ sealed interface ChimeEvent {
 
     data object ReplaceClicked : ChimeEvent
 
+    /** More menu "Bring here": the rack goes straight ahead of the head, facing the user (D14). */
+    data object BringClicked : ChimeEvent
+
+    data object MuteClicked : ChimeEvent
+
+    data class VolumeSelected(val level: Int) : ChimeEvent
+
+    /** Placing on the virtual floor: raise / lower it by [deltaM]. */
+    data class FloorNudged(val deltaM: Float) : ChimeEvent
+
     data object ExitClicked : ChimeEvent
 
     data object RetryClicked : ChimeEvent
@@ -177,4 +204,7 @@ sealed interface ChimeUiEffect {
     data object ExitApp : ChimeUiEffect
 
     data object Click : ChimeUiEffect
+
+    /** More menu "Bring here": the scene puts the placed rack straight ahead (it knows the head). */
+    data object BringRack : ChimeUiEffect
 }

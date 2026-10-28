@@ -28,7 +28,8 @@ data class GhostPose(val pose: RackPose, val tooClose: Boolean, val snapped: Sna
 
 /**
  * Placement rules of the ghost rack: the pointer meets the floor, the footprint centre goes there,
- * clamped to 0.8 - 6 m from the head's floor point (red below 0.8 m); it faces the viewer unless the
+ * clamped to 0.8 - 6 m from the head's floor point, then pushed out until the nearest point of the
+ * footprint is 0.8 m clear of the head (red when pushed, v0.1.2); it faces the viewer unless the
  * user turned it; near a snap frame (0.35 m, 20 degrees) it snaps, it lets go at 0.45 m / 25 degrees.
  */
 class PlacementUseCase {
@@ -56,6 +57,36 @@ class PlacementUseCase {
         }
     }
 
+    /**
+     * Level distance from the head to the nearest point of the rack's footprint (3.8 x 0.9 m at full size), the
+     * D14 clearance (v0.1.2, QA q2-3: 0.1.1 measured the footprint centre, so the front edge could come within
+     * 0.35 m of the head and the 3.8 m ends were never checked). Zero when the head stands inside the footprint.
+     */
+    fun clearance(pose: RackPose, head: Vec3): Float {
+        val l = pose.toLocal(Vec3(head.x, pose.center.y, head.z))
+        val nx = l.x.coerceIn(-Bells.FOOT_HALF_X, Bells.FOOT_HALF_X)
+        val nz = l.z.coerceIn(Bells.FOOT_BACK_Z, Bells.FOOT_FRONT_Z)
+        return Vec3(l.x - nx, 0f, l.z - nz).length * pose.scale
+    }
+
+    /**
+     * Pushes the rack straight away from the head (level) until its footprint is [near] clear of it; returns the
+     * pose and whether it had to move. A footprint already clear is returned unchanged.
+     */
+    fun pushClear(pose: RackPose, head: Vec3, near: Float = NEAR_M): Pair<RackPose, Boolean> {
+        var p = pose
+        var moved = false
+        repeat(PUSH_STEPS) {
+            val d = clearance(p, head)
+            if (d >= near - CLEAR_EPS) return p to moved
+            val away = Vec3(p.center.x - head.x, 0f, p.center.z - head.z)
+            val dir = if (away.length < 1e-3f) p.rotation.rotate(Vec3(0f, 0f, -1f)) else away.normalized()
+            p = p.copy(center = p.center + dir * (near - d + CLEAR_EPS))
+            moved = true
+        }
+        return p to moved
+    }
+
     /** Heading that turns the rack's front (+Z) towards the head. */
     fun yawFacing(center: Vec3, head: Vec3, fallback: Float = 0f): Float {
         val dx = head.x - center.x
@@ -81,7 +112,10 @@ class PlacementUseCase {
     private fun flat(a: Vec3, b: Vec3): Float = Vec3(a.x - b.x, 0f, a.z - b.z).length
 
     companion object {
+        /** D14: a large piece stays 0.8 m (level) from the head, measured to the nearest point of its footprint. */
         const val NEAR_M = 0.8f
+        private const val PUSH_STEPS = 12
+        private const val CLEAR_EPS = 0.01f
         const val FAR_M = 6f
         const val CATCH_M = 0.35f
         const val RELEASE_M = 0.45f
