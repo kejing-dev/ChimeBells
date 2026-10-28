@@ -674,8 +674,8 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
             "floor_timeout" -> floorTimeoutS = v.toIntOrNull()?.coerceIn(1, 600) ?: 60
             "floor_virtual_s" -> virtualAfterS = v.toIntOrNull()?.coerceIn(1, 600) ?: VIRTUAL_FLOOR_AFTER_S
             // QA: block plane detection and go back to S1 (the no-floor path): the virtual floor comes in 5 s
-            "planes" -> {
-                planesBlocked = v == "off" || v == "0"
+            "noplanes" -> {
+                planesBlocked = v == "1" || v == "on"
                 if (planesBlocked) {
                     // back to S1 with no floor known: the virtual floor comes in 5 s
                     stopDemo()

@@ -3,7 +3,7 @@
 Twelve Zeng-Hou-Yi-style yongzhong hang 1:1 on a two-tier lacquer rack beside your real wall: look at a bell
 and pinch, strike the centre for one note and the side for another (one bell, two notes); in Follow the
 next drum glows so you can play a tune through. PICO OS 6, Kotlin, PICO Spatial SDK 6.1.9, one Mixed Stage
-(Full Space, passthrough), package `io.embodit.bianzhong`, v0.1.1.
+(Full Space, passthrough), package `io.embodit.bianzhong`, v0.1.2.
 
 Design package (binding): `../spatial-app-factory/apps/bianzhong/design-package.json` (v1.2.1, archetype D,
 STAGE_MIXED, single panel with popup, 19 states S0 - S18). Mockup: `../spatial-app-factory/apps/bianzhong/sample.html`.
@@ -76,6 +76,33 @@ Taste profile D8 / D9 / D10; the whole UI was audited (`../spatial-app-factory/a
 - Tests: `HeadFrameTest` (turn 0 / 90 / 180 / -90 / 45 / 225 degrees then reset: rack straight ahead facing the user;
   heading ignores pitch / roll; pointer behind; recenter jump vs fast turn; plate UVs; plates face the viewer,
   +X to their right, upright, no reflection) and `PanelClearanceTest`. `gradlew testDebugUnitTest`: 16 / 16.
+
+## v0.1.2 — QA round 2 rework (q2-1 .. q2-4) and moving the placed rack
+
+- **q2-1 HOME round trip moved the rack** (S18): going to the background the HMD provider hands out frames of
+  exactly the origin with the identity rotation about 0.5 s before ON_STOP; 0.1.1 fed them to `RecenterDetector`
+  (a 180-degree "jump" when facing +Z) and moved the rack behind the user. Now `HeadFrame.plausible` rejects them:
+  `HeadTracker.pose()` keeps the last real pose, the detector ignores placeholders, and the scene stops feeding it
+  in the background. The 1.5 s check after coming back never ran in 0.1.1 because Compose does not recompose while
+  the activity is stopped (the scene never saw `background = true`); the lifecycle observer now calls
+  `ChimeScene.onForeground` directly and the check waits for a real head sample (logs `RECENTER check in 1500ms`,
+  then `RECENTER reason=resume ... rack=kept|ahead`).
+- **q2-2 virtual floor** (taste D7): no floor within 5 s -> a virtual floor at head height - 1.55 m, straight into
+  placing (snackbar "No floor found: using a virtual floor"); while placing on it the panel shows Lower / Raise
+  (5 cm a press, +-0.6 m) and the hint says so; a real floor found later takes over. The 60 s "No floor found"
+  dialog (S13) only shows when there is no head at all. QA: `noplanes=1`.
+- **q2-3 clearance** (D14): 0.8 m is measured from the head to the nearest point of the footprint
+  (`PlacementUseCase.clearance` / `pushClear`), not to its centre: the ghost is pushed out (and red), a tap inside
+  is refused, a wall frame inside does not catch. Walking into a placed rack makes it see-through (0.35) within 0.3 m.
+- **q2-4 sound** (D15): Mute on the main panel's title row (worded, remembered); More > Volume low / mid / high
+  (0.25 / 0.45 / 0.7, default mid, remembered); each voice is pan x master x n^-0.7 (`StrokeGain`), so 8 ringing
+  voices sum to under 2x one stroke instead of 8x.
+- **Moving the placed rack** (D1 / D14): drag it by any bell (`detectSpatialDragGesture` on its own pointerInput, so
+  taps still strike): with a controller the footprint follows the ray's floor point, a hand / gaze pinch moves it by
+  the hand's movement x distance / 0.5 m; the thumbstick turns it about its vertical while pointed at or dragged;
+  it stays 0.8 - 6 m away. More > Bring here puts it straight ahead. No aiming falls back to the head's forward any
+  more (without a controller the ghost waits ahead and a gaze + pinch on the floor places it).
+- Tests: `ReworkV012Test` (placeholder pose, no false recenter, footprint clearance, push-out, gain). 23 / 23.
 
 ## The rack and the bells
 
@@ -161,8 +188,12 @@ The design's `key=value` words in one `cmd` string (pairs separated by spaces, o
 | `hover=off` | no hover from the pointer ray (clean pictures; the gaze ray of the fixed emulator camera otherwise lights a bell) |
 | `freeze=1\|0` | stops swings, ripples, breathing, the demo clock and snackbar timers (2 - 4 fps safe) |
 | `menu=1\|0`, `stop=1`, `replace=1`, `retry=1`, `exit=1` | panel actions |
-| `ui=<control>` | presses a panel control by name (more, turn45, mode_free, mode_follow, song_*, listen, follow, stop, again, labels_*, lang_*, size_*, menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half) |
-| `dump=1`, `hmd=1`, `bounds=1`, `planes=1` (planes + snap frames), `park=1` | queries |
+| `ui=<control>` | presses a panel control by name (mute, floor_down, floor_up, vol_low, vol_mid, vol_high, menu_bring, more, turn45, mode_free, mode_follow, song_*, listen, follow, stop, again, labels_*, lang_*, size_*, menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half) |
+| `dump=1`, `hmd=1`, `bounds=1`, `planes=1` (planes + snap frames), `park=1` | queries (`hmd=1` also logs `plausible=` and `rackClear=` metres) |
+| `noplanes=1\|0` | v0.1.2: block plane detection and go back to S1 with no floor; the virtual floor comes after `floor_virtual_s` (default 5) seconds |
+| `floor_virtual_s=<s>`, `floor_nudge=<m>` | virtual-floor delay; raise / lower it while placing on it (the panel's Lower / Raise do 0.05 m) |
+| `mute=1\|0`, `volume=0\|1\|2` | D15: the main panel's Mute, the More menu's Volume (remembered in prefs) |
+| `bring=1` | More > Bring here: the placed rack straight ahead, facing the user |
 
 Log tag `Bianzhong`: `STATE <Sxx> overlays=S4,S5,S10,S12,S15,S16 song=.. step=n/N hover=..` on every change;
 `strike=B6,zheng,pan=0.70,1.00`, `TAP`, `HOVER`, `SNAP on|off`, `WALLS`, `PLANES`, `PLACE`, `FOLLOW hit|miss|done`,

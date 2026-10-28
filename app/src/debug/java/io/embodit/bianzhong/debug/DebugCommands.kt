@@ -32,9 +32,9 @@ internal object DebugCommands {
     /** Application order: settings first, then the room, then what happens in it, then queries. */
     private val ORDER =
         listOf(
-            "lang", "labels", "scale", "wallmin", "ceiling", "floor_timeout", "coach_reset", "freeze_off", "freeze",
+            "lang", "labels", "scale", "mute", "volume", "wallmin", "ceiling", "floor_timeout", "floor_virtual_s", "noplanes", "coach_reset", "freeze_off", "freeze",
             "state", "goto", "place", "near", "mode", "song", "step", "done", "strike", "hover", "coach",
-            "menu", "stop", "replace", "retry", "ui", "dump", "hmd", "bounds", "planes", "park", "recenter", "exit",
+            "floor_nudge", "bring", "menu", "stop", "replace", "retry", "ui", "dump", "hmd", "bounds", "planes", "park", "recenter", "exit",
         )
 
     fun run(context: Context, extras: Map<String, String>) {

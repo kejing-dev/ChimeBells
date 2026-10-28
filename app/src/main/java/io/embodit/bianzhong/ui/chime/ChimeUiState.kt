@@ -102,7 +102,7 @@ data class ChimeUiState(
     val virtualFloorOn: Boolean = false,
     /** User nudge of the virtual floor, metres (+ up). */
     val floorOffsetM: Float = 0f,
-    /** Debug `planes=off`: plane detection is blocked (the no-floor path on the emulator room). */
+    /** Debug `noplanes=1`: plane detection is blocked (the no-floor path on the emulator room). */
     val planesBlocked: Boolean = false,
     /** D15 (v0.1.2): bell strokes are silent; remembered. */
     val muted: Boolean = false,
