@@ -139,7 +139,6 @@ private fun Title(state: ChimeUiState, ready: Boolean, onEvent: (ChimeEvent) -> 
             "mute",
             rs(if (state.muted) R.string.label_muted else R.string.action_mute),
             { onEvent(ChimeEvent.MuteClicked) },
-            primary = state.muted,
             minWidth = 96.dp,
             iconRes = if (state.muted) R.drawable.ic_mute else R.drawable.ic_volume,
         )
@@ -179,9 +178,12 @@ private fun HintRow(state: ChimeUiState) {
         }
     Row(modifier = Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = PicoTheme.colorScheme.labelPrimary, progressSize = CircularProgressDefaults.circleProgressSize(18.dp))
+        // too close: primary ink with a warning icon (v0.1.2, D13: the red text on glass measured 1.2:1)
+        val near = state.room == Room.PLACING && state.tooClose
+        if (near) Icon(painter = painterResource(R.drawable.ic_warning), contentDescription = null, modifier = Modifier.size(18.dp), tint = PicoTheme.colorScheme.labelPrimary)
         Text(
             text = text,
-            color = if (state.room == Room.PLACING && state.tooClose) PicoTheme.colorScheme.error else PicoTheme.colorScheme.labelSecondary,
+            color = if (near) PicoTheme.colorScheme.labelPrimary else PicoTheme.colorScheme.labelSecondary,
             style = ChimeType.body,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

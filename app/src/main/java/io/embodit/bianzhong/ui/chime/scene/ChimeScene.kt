@@ -131,6 +131,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private var realFloorY: Float? = null
     /** Head height minus 1.55 m, taken once when the virtual floor comes in. */
     private var virtualBaseY: Float? = null
+    private var planesWereBlocked = false
     private var ceilingY: Float? = null
     private var frames: List<SnapFrame> = emptyList()
     private var framesKey = ""
@@ -998,6 +999,9 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
             realFloorY = null
             lastPlaneCount = -1
         }
+        // unblocked again: re-read the planes kept by the tracker so a real floor takes over at once
+        if (!state.planesBlocked && planesWereBlocked) lastPlaneCount = -1
+        planesWereBlocked = state.planesBlocked
         val want = currentFloor(state)
         if (want == floorY) return
         floorY = want
