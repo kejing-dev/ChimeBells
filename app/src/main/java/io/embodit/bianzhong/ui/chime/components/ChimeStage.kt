@@ -11,7 +11,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import com.pico.spatial.ui.foundation.content.SpatialView
 import com.pico.spatial.ui.foundation.gesture.TargetEntity
+import com.pico.spatial.ui.foundation.gesture.detectSpatialDragGesture
 import com.pico.spatial.ui.foundation.gesture.detectSpatialTapGesture
+import androidx.compose.ui.platform.LocalDensity
 import io.embodit.bianzhong.ui.chime.ChimeEvent
 import io.embodit.bianzhong.ui.chime.ChimeUiState
 import io.embodit.bianzhong.ui.chime.debug.LocalProbePanel
@@ -30,6 +32,17 @@ import io.embodit.bianzhong.ui.chime.scene.PanelSpec
 internal fun ChimeStage(state: ChimeUiState, scene: ChimeScene, onEvent: (ChimeEvent) -> Unit) {
     val context = LocalContext.current
     val bindTick = scene.bindTick.intValue
+    val density = LocalDensity.current.density
+    // v0.1.3 (D21): the main panel's title row is its grip; the panel stays where it is let go
+    val grip =
+        Modifier.pointerInput("panelGrip") {
+            detectSpatialDragGesture(
+                context = context,
+                onDragStart = { _, _ -> },
+                onDragEnd = { scene.onPanelDragEnd() },
+                onDragCancel = { scene.onPanelDragEnd() },
+            ) { value -> scene.onPanelDrag(value.dragAmount.x, value.dragAmount.y, value.dragAmount.z, density) }
+        }
 
     SpatialView(
         modifier =
@@ -40,10 +53,10 @@ internal fun ChimeStage(state: ChimeUiState, scene: ChimeScene, onEvent: (ChimeE
                 },
         attachments = {
             AttachmentPanel(PanelSpec.CONTROL) {
-                PoolPanel(PanelSpec.CONTROL, scene, watched = true) { inView -> ControlPanel(state = state, filled = inView, onEvent = onEvent) }
+                PoolPanel(PanelSpec.CONTROL, scene, watched = true) { inView -> ControlPanel(state = state, filled = inView, onEvent = onEvent, grip = grip) }
             }
             AttachmentPanel(PanelSpec.FOLLOW) {
-                PoolPanel(PanelSpec.FOLLOW, scene, watched = true) { inView -> FollowPanel(state = state, filled = inView, onEvent = onEvent) }
+                PoolPanel(PanelSpec.FOLLOW, scene, watched = true) { inView -> FollowPanel(state = state, filled = inView, onEvent = onEvent, grip = grip) }
             }
             AttachmentPanel(PanelSpec.MENU) {
                 PoolPanel(PanelSpec.MENU, scene, watched = true) { inView -> MoreMenu(state = state, filled = inView, onEvent = onEvent) }
@@ -56,6 +69,7 @@ internal fun ChimeStage(state: ChimeUiState, scene: ChimeScene, onEvent: (ChimeE
                     SnackPanel(
                         snack = if (inView) state.snack else null,
                         state = state,
+                        onEvent = onEvent,
                         applied = scene.panelStretch[PanelSpec.SNACK] ?: 1f,
                         onWidth = { scene.reportWidth(PanelSpec.SNACK, it) },
                     )

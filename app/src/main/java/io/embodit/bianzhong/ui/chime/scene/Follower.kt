@@ -18,7 +18,9 @@ data class FollowPose(val position: Vec3, val yaw: Float) {
 }
 
 /**
- * Lazy follow (Spatial Ruler rule T11, taken over for the main panel and the extinguisher prop): the
+ * Main panel placement. v0.1.3 (taste D21, "尽量用固定且可以拖动位置的 UI"): with [fixed] the panel is parked once
+ * (start, recenter, [park] = "叫回面前") and then stays in the room; the user moves it with the grip ([nudge]).
+ * Without [fixed] it is the old lazy follow (Spatial Ruler rule T11): the
  * thing rests where it settled; once its centre has been more than 45 degrees off the view direction,
  * or nearer than [nearM] or farther than [farM], for 0.5 s without a break, it slides to the designed
  * pose of that moment in 0.35 s (ease-in-out, time based). It holds still while [hold]. The designed
@@ -32,6 +34,7 @@ internal class Follower(
     private val lean: Quat4 = Quat4.IDENTITY,
     private val nearM: Float = 0.35f,
     private val farM: Float = 0.9f,
+    private val fixed: Boolean = true,
 ) {
     private val restRule = RestBodyUseCase()
     private var started = false
@@ -115,6 +118,7 @@ internal class Follower(
             slide(nowMs)
             return true
         }
+        if (fixed) return false
         val to = pose.position - head.position
         val dist = to.length
         val away = if (dist < 1e-3f) 0f else Math.toDegrees(acos((to / dist).dot(head.forward).coerceIn(-1f, 1f)).toDouble()).toFloat()
@@ -145,7 +149,21 @@ internal class Follower(
         return false
     }
 
-    /** Slides to the designed pose now (debug `park`, and after a hidden panel comes back). */
+    /**
+     * Moves the panel by [delta] (Stage metres, from the grip drag) and turns it to face [head] about the vertical.
+     * Ends any slide; the surface correction is dropped (the user put it where they want it).
+     */
+    fun nudge(delta: Vec3, head: HeadPose) {
+        if (!started) return
+        slideStartMs = NEVER
+        anchorPos = anchorPos + applied + delta
+        applied = Vec3.ZERO
+        val to = anchorPos - head.position
+        restYaw = FacePanelUseCase.yawOf(to, restYaw)
+        write()
+    }
+
+    /** Slides to the designed pose now ("叫回面前", debug `park`, after the rack is placed). */
     fun park(head: HeadPose, planes: Collection<PlaneSurface>, nowMs: Long) {
         if (!started) return
         startSlide(head, planes, nowMs, "park")

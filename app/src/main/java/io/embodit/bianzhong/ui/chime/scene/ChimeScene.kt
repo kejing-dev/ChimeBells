@@ -160,6 +160,11 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     // ---- the placed rack is locked (v0.1.3): only [Move] / Bring here move it; see-through when walked into (D14)
     private var rackFaded = false
 
+    // ---- the fixed main panel (D21, v0.1.3)
+    private var panelDragged = false
+    private var panelOutSinceMs = NEVER
+    private var panelAwaySent = false
+
     // ---- bells
     private val impulses = Array(12) { ArrayList<Pair<Long, Float>>() }
     private val flashes = LongArray(12) { NEVER }
@@ -581,6 +586,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         if (hasHead) clearPanel(state, now)
         if (hasHead && head.position.length > 1e-3f) follower.follow(head, planeTracker.all, planeTracker.count, now, hold)
         placeFamily(state, rig)
+        if (hasHead) panelAwayFrame(now)
         if (state.dialog != null && !dialogPlaced) syncPanels(state)
         if (!attached) return
 
@@ -616,10 +622,13 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
             follower.pitchCap = PanelClearance.pitchCap(head.position, lowPoints(pose), hh, Follower.MAIN_OFFSET.length) ?: Float.POSITIVE_INFINITY
         }
         val key = pose to form
-        if (key != clearanceKey) {
+        // v0.1.3 (D21): the panel is fixed. It re-parks once when the rack is put down (to sit under the lower tier),
+        // never on a mode / form change, and not at all once the user has dragged it
+        val rackKey = pose
+        if (rackKey != clearanceKey) {
             val first = clearanceKey == null
-            clearanceKey = key
-            if (!first && pose != null) follower.park(head, planeTracker.all, now)
+            clearanceKey = rackKey
+            if (!first && pose != null && !panelDragged) follower.park(head, planeTracker.all, now)
         }
     }
 
@@ -1022,6 +1031,43 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         }
     }
 
+    /** Grip drag on the main panel's title row: [dx], [dy], [dz] px of the panel's own surface (y down). */
+    fun onPanelDrag(dx: Float, dy: Float, dz: Float, density: Float) {
+        if (!hasHead || density <= 0f) return
+        val k = PanelRig.DP_M * PanelSpec.MAIN_SCALE / density
+        val local = Vec3(dx * k, -dy * k, dz * k)
+        if (local.length < 1e-5f) return
+        if (!panelDragged) ChimeLog.i("PANEL drag start")
+        panelDragged = true
+        follower.nudge(follower.rotation.rotate(local), head)
+    }
+
+    fun onPanelDragEnd() {
+        if (panelDragged) ChimeLog.i("PANEL drag end pos=${ChimeLog.pos(follower.pose.position)}")
+    }
+
+    /** [叫回面前] (D21): the main panel back in front of the head. */
+    fun recallPanel() {
+        if (!hasHead) return
+        follower.park(head, planeTracker.all, SystemClock.elapsedRealtime())
+        panelOutSinceMs = NEVER
+        ChimeLog.i("PANEL recalled")
+    }
+
+    /** The fixed panel out of view (more than 60 degrees off the gaze, or over 3 m away) for 1.5 s -> the recall pill. */
+    private fun panelAwayFrame(now: Long) {
+        val to = follower.pose.position - head.position
+        val dist = to.length
+        val off = if (dist < 1e-3f) 0f else Math.toDegrees(kotlin.math.acos((to / dist).dot(head.forward).coerceIn(-1f, 1f)).toDouble()).toFloat()
+        val out = off > PANEL_AWAY_DEG || dist > PANEL_AWAY_M
+        if (!out) panelOutSinceMs = NEVER else if (panelOutSinceMs == NEVER) panelOutSinceMs = now
+        val away = out && panelOutSinceMs != NEVER && now - panelOutSinceMs >= PANEL_AWAY_MS
+        if (away != panelAwaySent) {
+            panelAwaySent = away
+            sink(ChimeEvent.PanelAwayChanged(away))
+        }
+    }
+
     /** More menu "Bring here" (D14): the placed rack straight ahead of the head, facing the user. */
     fun bringRack() {
         val r = ui.rack ?: return
@@ -1197,6 +1243,11 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
 
         /** The rack turns see-through when the head comes within this of its footprint (D14). */
         private const val FADE_NEAR_M = 0.3f
+
+        /** D21: the recall pill shows once the fixed panel has been this far out of view for this long. */
+        private const val PANEL_AWAY_DEG = 60f
+        private const val PANEL_AWAY_M = 3f
+        private const val PANEL_AWAY_MS = 1500L
         private val SWING_LOWER_RAD = Math.toRadians(2.5).toFloat()
         private val SWING_UPPER_RAD = Math.toRadians(4.0).toFloat()
         private const val SWING_PERIOD_S = 1.2f

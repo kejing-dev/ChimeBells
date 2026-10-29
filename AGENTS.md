@@ -85,7 +85,10 @@ gone, and a recenter no longer moves a placed rack (when it is off the heading t
 here). [Move] (worded, beside the mode segments, short and Follow forms) re-enters placing with the ghost at the rack's
 pose; it follows the controller ray (or waits for a gaze + pinch on the floor), the stick and Turn 45 turn it, the
 trigger / pinch puts it down and locks it; [Cancel] puts it back. Follow progress survives a move; More > Bring here and
-the size switch remain explicit UI moves. Debug `move=1` / `move=cancel`; `dump=1` has `moving`. Container question
+the size switch remain explicit UI moves. Debug `move=1` / `move=cancel`; `dump=1` has `moving`. Main panel fixed (taste D21, "尽量用固定且可以拖动位置的 UI"): `Follower(fixed = true)` parks once (start / recenter / after the
+rack is put down, unless dragged) and never slides after the head; the title row is a grip (`detectSpatialDragGesture`
+on the 2D row, `ChimeScene.onPanelDrag`), the panel turns to face the user as it moves and stays where it is let go.
+Out of view (> 60 degrees or > 3 m) for 1.5 s -> a head-locked pill "主面板在别处 [叫回面前]" (`recall=1`). Container question
 (Shared vs Full Space): `../spatial-app-factory/apps/bianzhong/build/container-recommendation.md` (stay Full Space).
 
 ## v0.1.2 — QA round 2 rework (q2-1 .. q2-4) and moving the placed rack
@@ -199,12 +202,13 @@ The design's `key=value` words in one `cmd` string (pairs separated by spaces, o
 | `hover=off` | no hover from the pointer ray (clean pictures; the gaze ray of the fixed emulator camera otherwise lights a bell) |
 | `freeze=1\|0` | stops swings, ripples, breathing, the demo clock and snackbar timers (2 - 4 fps safe) |
 | `menu=1\|0`, `stop=1`, `replace=1`, `retry=1`, `exit=1` | panel actions |
-| `ui=<control>` | presses a panel control by name (move, move_cancel, mute, floor_down, floor_up, vol_low, vol_mid, vol_high, menu_bring, more, turn45, mode_free, mode_follow, song_*, listen, follow, stop, again, labels_*, lang_*, size_*, menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half) |
+| `ui=<control>` | presses a panel control by name (grip, panel_recall, move, move_cancel, mute, floor_down, floor_up, vol_low, vol_mid, vol_high, menu_bring, more, turn45, mode_free, mode_follow, song_*, listen, follow, stop, again, labels_*, lang_*, size_*, menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half) |
 | `dump=1`, `hmd=1`, `bounds=1`, `planes=1` (planes + snap frames), `park=1` | queries (`hmd=1` also logs `plausible=` and `rackClear=` metres) |
 | `noplanes=1\|0` | v0.1.2: block plane detection and go back to S1 with no floor; the virtual floor comes after `floor_virtual_s` (default 5) seconds |
 | `floor_virtual_s=<s>`, `floor_nudge=<m>` | virtual-floor delay; raise / lower it while placing on it (the panel's Lower / Raise do 0.05 m) |
 | `mute=1\|0`, `volume=0\|1\|2` | D15: the main panel's Mute, the More menu's Volume (remembered in prefs) |
 | `bring=1` | More > Bring here: the placed rack straight ahead, facing the user |
+| `recall=1` | D21: the main panel back in front (the out-of-view pill's button) |
 | `move=1\|cancel` | v0.1.3: the main panel's Move (placing again from the locked rack) / Cancel |
 
 Log tag `Bianzhong`: `STATE <Sxx> overlays=S4,S5,S10,S12,S15,S16 song=.. step=n/N hover=..` on every change;

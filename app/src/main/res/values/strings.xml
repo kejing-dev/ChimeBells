@@ -75,4 +75,7 @@
     <string name="action_cancel">Cancel</string>
     <string name="hint_moving">Moving: point to the new spot, trigger or pinch to set · stick turns</string>
     <string name="snack_rack_behind">The rack is not in front: use Move, or More > Bring here</string>
+    <string name="grip_hint">Drag</string>
+    <string name="snack_panel_away">The panel is elsewhere</string>
+    <string name="action_recall">Bring panel here</string>
 </resources>

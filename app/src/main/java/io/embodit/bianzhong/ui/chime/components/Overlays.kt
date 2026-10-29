@@ -172,6 +172,7 @@ private fun snackText(s: SnackUi, state: ChimeUiState): String =
         SnackKind.SNAPPED -> rs(R.string.snack_snapped)
         SnackKind.VIRTUAL_FLOOR -> rs(R.string.snack_virtual_floor)
         SnackKind.RACK_BEHIND -> rs(R.string.snack_rack_behind)
+        SnackKind.PANEL_AWAY -> rs(R.string.snack_panel_away)
     }
 
 /**
@@ -181,7 +182,7 @@ private fun snackText(s: SnackUi, state: ChimeUiState): String =
  * capsule is drawn stretched back).
  */
 @Composable
-internal fun SnackPanel(snack: SnackUi?, state: ChimeUiState, applied: Float = 1f, onWidth: (Float) -> Unit = {}) {
+internal fun SnackPanel(snack: SnackUi?, state: ChimeUiState, onEvent: (ChimeEvent) -> Unit = {}, applied: Float = 1f, onWidth: (Float) -> Unit = {}) {
     val (w, h) = PanelSpec.SNACK_SIZE
     Box(modifier = Modifier.size(w.dp, h.dp), contentAlignment = Alignment.Center) {
         if (snack == null) return@Box
@@ -218,6 +219,7 @@ internal fun SnackPanel(snack: SnackUi?, state: ChimeUiState, applied: Float = 1
                             SnackKind.SNAPPED -> R.drawable.ic_check
                             SnackKind.VIRTUAL_FLOOR -> R.drawable.ic_floor
                             SnackKind.RACK_BEHIND -> R.drawable.ic_move
+                            SnackKind.PANEL_AWAY -> R.drawable.ic_grip
                         }
                     ),
                 contentDescription = null,
@@ -225,6 +227,9 @@ internal fun SnackPanel(snack: SnackUi?, state: ChimeUiState, applied: Float = 1
                 tint = ink,
             )
             Text(text = snackText(snack, state), color = ink, style = ChimeType.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (snack.kind == SnackKind.PANEL_AWAY) {
+                WordButton("panel_recall", rs(R.string.action_recall), { onEvent(ChimeEvent.RecallPanelClicked) }, minWidth = 120.dp, height = 44.dp)
+            }
         }
     }
 }

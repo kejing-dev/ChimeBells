@@ -34,7 +34,7 @@ internal object DebugCommands {
         listOf(
             "lang", "labels", "scale", "mute", "volume", "wallmin", "ceiling", "floor_timeout", "floor_virtual_s", "noplanes", "coach_reset", "freeze_off", "freeze",
             "state", "goto", "place", "near", "mode", "song", "step", "done", "strike", "hover", "coach",
-            "floor_nudge", "bring", "move", "menu", "stop", "replace", "retry", "ui", "dump", "hmd", "bounds", "planes", "park", "recenter", "exit",
+            "floor_nudge", "bring", "move", "recall", "menu", "stop", "replace", "retry", "ui", "dump", "hmd", "bounds", "planes", "park", "recenter", "exit",
         )
 
     fun run(context: Context, extras: Map<String, String>) {

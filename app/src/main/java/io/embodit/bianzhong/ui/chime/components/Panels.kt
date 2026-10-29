@@ -3,6 +3,7 @@ package io.embodit.bianzhong.ui.chime.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -47,12 +48,12 @@ private const val FLOOR_STEP_M = 0.05f
  * No close key (design `panels.control`).
  */
 @Composable
-internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit) {
+internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit, grip: Modifier = Modifier) {
     val (w, h) = PanelSpec.CONTROL_SIZE
     Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual, state.moving)) {
         if (!filled) return@Glass
         val ready = state.room != Room.STARTING && state.room != Room.FINDING && state.dialog == null
-        Title(state, ready, onEvent)
+        Title(state, ready, onEvent, grip)
         if (state.room == Room.PLACING) {
             Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 WordButton("turn45", rs(R.string.action_turn45), { onEvent(ChimeEvent.Turn45Clicked) }, minWidth = 128.dp, height = 40.dp, iconRes = R.drawable.ic_rot_cw)
@@ -83,11 +84,11 @@ internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeE
  * and the hint line.
  */
 @Composable
-internal fun FollowPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit) {
+internal fun FollowPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit, grip: Modifier = Modifier) {
     val (w, h) = PanelSpec.FOLLOW_SIZE
     Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual)) {
         if (!filled) return@Glass
-        Title(state, true, onEvent)
+        Title(state, true, onEvent, grip)
         Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModeSegments(state, true, onEvent)
             MoveButton(state, true, onEvent)
@@ -133,10 +134,14 @@ internal fun FollowPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEv
 }
 
 @Composable
-private fun Title(state: ChimeUiState, ready: Boolean, onEvent: (ChimeEvent) -> Unit) {
+private fun Title(state: ChimeUiState, ready: Boolean, onEvent: (ChimeEvent) -> Unit, grip: Modifier) {
     Row(modifier = Modifier.fillMaxWidth().height(KeyHeight), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = rs(R.string.title), color = PicoTheme.colorScheme.labelPrimary, style = ChimeType.title, maxLines = 1)
-        Spacer(modifier = Modifier.weight(1f))
+        // the grip (D21): grab the title area and drag; the panel stays where it is let go
+        Row(modifier = Modifier.weight(1f).fillMaxHeight().then(grip).probe("grip"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(painter = painterResource(R.drawable.ic_grip), contentDescription = rs(R.string.grip_hint), modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.labelSecondary)
+            Text(text = rs(R.string.title), color = PicoTheme.colorScheme.labelPrimary, style = ChimeType.title, maxLines = 1)
+            Text(text = rs(R.string.grip_hint), color = PicoTheme.colorScheme.labelSecondary, style = ChimeType.body, maxLines = 1, overflow = TextOverflow.Clip)
+        }
         if (state.scale < 1f) {
             Chip(label = { Text(text = rs(R.string.chip_half), maxLines = 1, softWrap = false) }, onClick = { onEvent(ChimeEvent.MoreClicked) }, modifier = Modifier.probe("chip_half"))
         }

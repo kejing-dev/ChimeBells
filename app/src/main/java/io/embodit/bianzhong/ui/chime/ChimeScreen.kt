@@ -104,6 +104,7 @@ fun ChimeScreen() {
                 ChimeUiEffect.Wave -> scene.wave()
                 ChimeUiEffect.StopSounds -> scene.stopSounds()
                 ChimeUiEffect.BringRack -> scene.bringRack()
+                ChimeUiEffect.RecallPanel -> scene.recallPanel()
                 ChimeUiEffect.Click -> runCatching { audio.playSystem(SpatialSoundEffect.OpClick) }.onFailure { ChimeLog.w("SOUND failed: $it") }
             }
         }

@@ -88,6 +88,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
     private var virtualJob: Job? = null
     private var muted = false
     private var moveFrom: Room? = null
+    private var panelAway = false
     private var moveRack: RackPose? = null
     private var moveStep = 0
     private var volume = 1
@@ -231,6 +232,14 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
             ChimeEvent.BringClicked -> {
                 menuOpen = false
                 if (room.placed && rack != null) emit(ChimeUiEffect.BringRack)
+            }
+            is ChimeEvent.PanelAwayChanged -> {
+                panelAway = event.away
+                ChimeLog.i("PANEL away=${event.away}")
+            }
+            ChimeEvent.RecallPanelClicked -> {
+                panelAway = false
+                emit(ChimeUiEffect.RecallPanel)
             }
             ChimeEvent.MoveClicked -> {
                 menuOpen = false
@@ -577,7 +586,8 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
     private fun publish() {
         val snack =
             transientSnack
-                ?: if (noWall && room == Room.PLACING) SnackUi(-1, SnackKind.NO_WALL) else null
+                ?: if (panelAway && dialog == null) SnackUi(-2, SnackKind.PANEL_AWAY)
+                else if (noWall && room == Room.PLACING) SnackUi(-1, SnackKind.NO_WALL) else null
         val target = if (room == Room.FOLLOW) song.strokes.getOrNull(step) else null
         _state.value =
             ChimeUiState(
@@ -697,6 +707,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         o.put("planesBlocked", planesBlocked)
         o.put("muted", muted)
         o.put("moving", moveFrom != null && room == Room.PLACING)
+        o.put("panelAway", panelAway)
         o.put("volume", volume)
         o.put("coachSeen", coachSeen)
         rack?.let { r ->
@@ -749,6 +760,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
             "mute" -> if ((v == "1" || v == "on") != muted) onEvent(ChimeEvent.MuteClicked)
             "volume" -> onEvent(ChimeEvent.VolumeSelected(v.toIntOrNull() ?: 1))
             "bring" -> onEvent(ChimeEvent.BringClicked)
+            "recall" -> onEvent(ChimeEvent.RecallPanelClicked)
             "move" -> onEvent(if (v == "cancel" || v == "0") ChimeEvent.MoveCancelClicked else ChimeEvent.MoveClicked)
             "wallmin" -> {
                 val m = v.toFloatOrNull()

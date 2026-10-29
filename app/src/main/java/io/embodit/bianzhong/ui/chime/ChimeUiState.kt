@@ -47,6 +47,7 @@ enum class SnackKind {
     SNAPPED, // "Lined up with the wall", 0.8 s
     VIRTUAL_FLOOR, // v0.1.2 (D7): no floor in 5 s, a virtual floor stands in
     RACK_BEHIND, // v0.1.3: after a recenter the locked rack is off to the side / behind: use Move
+    PANEL_AWAY, // v0.1.3 (D21): the fixed main panel is out of view; the pill carries [叫回面前]
 }
 
 data class SnackUi(val id: Int, val kind: SnackKind)
@@ -181,6 +182,12 @@ sealed interface ChimeEvent {
 
     data object MuteClicked : ChimeEvent
 
+    /** v0.1.3 (D21): the fixed main panel has been out of view for a while (true) / is back in view (false). */
+    data class PanelAwayChanged(val away: Boolean) : ChimeEvent
+
+    /** [叫回面前]: the main panel comes back in front of the head. */
+    data object RecallPanelClicked : ChimeEvent
+
     /** v0.1.3: the main panel's [Move]: the locked rack may be placed again. */
     data object MoveClicked : ChimeEvent
 
@@ -221,4 +228,7 @@ sealed interface ChimeUiEffect {
 
     /** More menu "Bring here": the scene puts the placed rack straight ahead (it knows the head). */
     data object BringRack : ChimeUiEffect
+
+    /** [叫回面前]: the scene parks the main panel in front of the head. */
+    data object RecallPanel : ChimeUiEffect
 }

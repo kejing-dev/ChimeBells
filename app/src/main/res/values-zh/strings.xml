@@ -75,4 +75,7 @@
     <string name="action_cancel">取消</string>
     <string name="hint_moving">移动：指向新位置，扳机或捏一下放下 · 摇杆左右转动</string>
     <string name="snack_rack_behind">钟架不在面前：点「移动」或「更多 → 移到面前」</string>
+    <string name="grip_hint">拖动</string>
+    <string name="snack_panel_away">主面板在别处</string>
+    <string name="action_recall">叫回面前</string>
 </resources>
