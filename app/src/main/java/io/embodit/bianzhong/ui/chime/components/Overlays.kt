@@ -171,6 +171,7 @@ private fun snackText(s: SnackUi, state: ChimeUiState): String =
         SnackKind.LOW_CEILING -> rs(R.string.snack_low_ceiling)
         SnackKind.SNAPPED -> rs(R.string.snack_snapped)
         SnackKind.VIRTUAL_FLOOR -> rs(R.string.snack_virtual_floor)
+        SnackKind.RACK_BEHIND -> rs(R.string.snack_rack_behind)
     }
 
 /**
@@ -216,6 +217,7 @@ internal fun SnackPanel(snack: SnackUi?, state: ChimeUiState, applied: Float = 1
                             SnackKind.LOW_CEILING -> R.drawable.ic_ceiling
                             SnackKind.SNAPPED -> R.drawable.ic_check
                             SnackKind.VIRTUAL_FLOOR -> R.drawable.ic_floor
+                            SnackKind.RACK_BEHIND -> R.drawable.ic_move
                         }
                     ),
                 contentDescription = null,

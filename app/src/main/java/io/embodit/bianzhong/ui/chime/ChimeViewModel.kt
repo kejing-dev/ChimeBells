@@ -87,6 +87,9 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
     private var planesBlocked = false
     private var virtualJob: Job? = null
     private var muted = false
+    private var moveFrom: Room? = null
+    private var moveRack: RackPose? = null
+    private var moveStep = 0
     private var volume = 1
     private var planesOn = true
     private var background = false
@@ -147,6 +150,8 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                     val pose = event.pose
                     if (pose == null) {
                         ChimeLog.i("PLACE refused (too close or no floor)")
+                    } else if (moveFrom != null) {
+                        endMove(pose)
                     } else {
                         place(pose)
                     }
@@ -159,9 +164,10 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 }
             }
             is ChimeEvent.RackRecentered -> {
+                // v0.1.3: a placed rack is locked; after a recenter it stays put and the snackbar points to Move
                 if (room.placed && rack != null) {
-                    rack = event.pose.copy(scale = scale)
-                    ChimeLog.i("PLACE recentred center=${ChimeLog.pos(event.pose.center)} yaw=${ChimeLog.f(Math.toDegrees(event.pose.yaw.toDouble()).toFloat(), 1)}")
+                    ChimeLog.i("PLACE locked: recenter left the rack off the heading, hint shown")
+                    showSnack(SnackKind.RACK_BEHIND, RACK_BEHIND_SNACK_MS)
                 }
             }
             is ChimeEvent.BellTapped -> onBell(event.bell, event.zone, event.local)
@@ -226,6 +232,11 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 menuOpen = false
                 if (room.placed && rack != null) emit(ChimeUiEffect.BringRack)
             }
+            ChimeEvent.MoveClicked -> {
+                menuOpen = false
+                if (room.placed && rack != null) startMove()
+            }
+            ChimeEvent.MoveCancelClicked -> if (moveFrom != null && room == Room.PLACING) endMove(null)
             ChimeEvent.MuteClicked -> {
                 muted = !muted
                 prefs.edit().putBoolean(KEY_MUTED, muted).apply()
@@ -375,7 +386,50 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         if (!coachSeen) startCoach()
     }
 
+    /** v0.1.3: [Move] - placing again, the ghost starting at the locked rack; Follow progress is kept. */
+    private fun startMove() {
+        val from = if (room == Room.DEMO) Room.FOLLOW_PICK else room
+        stopDemo()
+        moveFrom = from
+        moveStep = if (from == Room.FOLLOW_PICK) 0 else step
+        moveRack = rack
+        rack = null
+        hover = null
+        ChimeLog.i("MOVE start from=$from")
+        enterPlacing()
+    }
+
+    /** Ends a move: the rack at [pose] (null = back where it was), locked again, the previous room back. */
+    private fun endMove(pose: RackPose?) {
+        val from = moveFrom ?: return
+        val back = moveRack
+        moveFrom = null
+        moveRack = null
+        placingJob?.cancel()
+        snapped = false
+        tooClose = false
+        noWall = false
+        forceWall = false
+        forcedNear = false
+        rack = (pose ?: back)?.copy(scale = scale)
+        room = if (rack == null) Room.PLACING else from
+        step = moveStep
+        ChimeLog.i("MOVE ${if (pose != null) "placed" else "cancelled"} center=${ChimeLog.pos(rack?.center)} locked")
+        if (pose != null) emit(ChimeUiEffect.Click)
+        planesOffJob?.cancel()
+        planesOffJob =
+            viewModelScope.launch {
+                delay(PLANES_OFF_MS)
+                if (room.placed) {
+                    planesOn = false
+                    publish()
+                }
+            }
+    }
+
     private fun replace() {
+        moveFrom = null
+        moveRack = null
         stopDemo()
         step = 0
         rack = null
@@ -562,6 +616,8 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 planesBlocked = planesBlocked,
                 muted = muted,
                 volume = volume,
+                moving = moveFrom != null && room == Room.PLACING,
+                moveStart = if (room == Room.PLACING) moveRack else null,
             )
         val line = stateLine()
         if (line != lastStateLine) {
@@ -640,6 +696,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         o.put("floorOffset", floorOffsetM.toDouble())
         o.put("planesBlocked", planesBlocked)
         o.put("muted", muted)
+        o.put("moving", moveFrom != null && room == Room.PLACING)
         o.put("volume", volume)
         o.put("coachSeen", coachSeen)
         rack?.let { r ->
@@ -692,6 +749,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
             "mute" -> if ((v == "1" || v == "on") != muted) onEvent(ChimeEvent.MuteClicked)
             "volume" -> onEvent(ChimeEvent.VolumeSelected(v.toIntOrNull() ?: 1))
             "bring" -> onEvent(ChimeEvent.BringClicked)
+            "move" -> onEvent(if (v == "cancel" || v == "0") ChimeEvent.MoveCancelClicked else ChimeEvent.MoveClicked)
             "wallmin" -> {
                 val m = v.toFloatOrNull()
                 forcedNoWall = m != null && m >= 99f
@@ -907,6 +965,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         private const val KEY_VOLUME = "volume"
         private const val VIRTUAL_FLOOR_AFTER_S = 5
         private const val VIRTUAL_SNACK_MS = 5000L
+        private const val RACK_BEHIND_SNACK_MS = 6000L
         private const val FLOOR_NUDGE_MAX_M = 0.6f
         private const val LOW_CEILING_M = 2.30f
         private const val NO_WALL_AFTER_MS = 8000L

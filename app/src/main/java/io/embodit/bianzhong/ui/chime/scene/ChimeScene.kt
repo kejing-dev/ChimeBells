@@ -157,12 +157,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
     private var turnStartMs = NEVER
     private var triggerDown = false
 
-    // ---- the placed rack: drag (controller ray + trigger, or gaze / hand pinch) and thumbstick turn (D1 / D14, v0.1.2)
-    private var dragging = false
-    private var dragPose: RackPose? = null
-    private var dragGrab: Vec3? = null
-    private var dragMoved = false
-    private var stickTurning = false
+    // ---- the placed rack is locked (v0.1.3): only [Move] / Bring here move it; see-through when walked into (D14)
     private var rackFaded = false
 
     // ---- bells
@@ -389,9 +384,8 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         val placed = state.room.placed && state.rack != null
         rackView.setShown(placed)
         if (placed) {
-            if (dragPose == null && (force || previous.rack != state.rack)) rackView.place(state.rack!!)
+            if (force || previous.rack != state.rack) rackView.place(state.rack!!)
         } else {
-            endRackAdjust(commit = false)
             pointerHover = null
             ripples?.clear()
         }
@@ -402,6 +396,12 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
             if (previous.room == Room.PLACING) resetGhost()
         } else if (previous.room != Room.PLACING) {
             resetGhost()
+            // a move (v0.1.3) starts the ghost where the locked rack stood, keeping its heading
+            state.moveStart?.let { m ->
+                ghostCenter = m.center
+                ghostYaw = m.yaw
+                userTurned = true
+            }
         }
         if (state.turnSerial != turnSeen) {
             turnSeen = state.turnSerial
@@ -594,7 +594,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
             triggerDown = false
         }
         if (state.room.placed && state.rack != null) {
-            adjustFrame(state, dt)
+            fadeFrame(state)
             bellsFrame(state, now)
         }
         redrawPlates(state, now)
@@ -1010,104 +1010,16 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         sink(ChimeEvent.PlanesChanged(floorY, ceilingY, frames.size, virtual = realFloorY == null && want != null))
     }
 
-    /** A system drag may grab the placed rack by any bell (the bells carry the colliders). */
-    fun isRackEntity(entity: com.pico.spatial.core.ecs.Entity): Boolean = ui.room.placed && ui.rack != null && rack?.bellOf(entity) != null
-
-    /**
-     * Drag start on a bell of the placed rack (`detectSpatialDragGesture`; controller ray + trigger, or gaze / hand
-     * pinch). With a controller the footprint follows the ray's floor point (keeping the grab offset); a hand drags
-     * by its own movement, scaled by the distance.
-     */
-    fun onRackDragStart() {
-        val pose = ui.rack ?: return
-        if (!ui.room.placed || !hasHead) return
-        dragging = true
-        dragMoved = false
-        dragPose = pose
-        val sample = controller.sample()
-        dragGrab =
-            sample?.takeIf { it.pressed || it.trigger > 0.4f }?.let { c ->
-                val fp = placeRule.floorPoint(c.ray.origin, c.ray.direction, pose.center.y)
-                Vec3(pose.center.x - fp.x, 0f, pose.center.z - fp.z)
-            }
-        ChimeLog.i("DRAG start by=${if (dragGrab != null) "controller" else "hand"} center=${ChimeLog.pos(pose.center)}")
-    }
-
-    /** A hand drag step: [stageDelta] metres in Stage space since the last step. */
-    fun onRackDrag(dx: Float, dy: Float, dz: Float) {
-        if (!dragging || dragGrab != null) return
-        val pose = dragPose ?: return
-        val a = toStage(0f, 0f, 0f) ?: return
-        val b = toStage(dx, dy, dz) ?: return
-        val d = Vec3(b.x - a.x, 0f, b.z - a.z)
-        val dist = Vec3(pose.center.x - head.position.x, 0f, pose.center.z - head.position.z).length
-        val gain = (dist / HAND_ARM_M).coerceIn(1f, HAND_GAIN_MAX)
-        moveDragged(pose.copy(center = pose.center + d * gain))
-    }
-
-    fun onRackDragEnd() {
-        if (!dragging) return
-        dragging = false
-        endRackAdjust(commit = true)
-    }
-
-    /** Controller-driven dragging and the thumbstick turn of the placed rack (pointer on the rack, or while dragging). */
-    private fun adjustFrame(state: ChimeUiState, dt: Float) {
+    /** D14: walking into the locked rack makes it see-through. */
+    private fun fadeFrame(state: ChimeUiState) {
         val view = rack ?: return
-        val base = dragPose ?: state.rack ?: return
-        var pose = base
-        val c = controller.sample()
-        val grab = dragGrab
-        if (dragging && grab != null && c != null) {
-            val fp = placeRule.floorPoint(c.ray.origin, c.ray.direction, base.center.y)
-            if (HeadFrame.inFront(head.position, head.rotation, fp)) pose = pose.copy(center = Vec3(fp.x + grab.x, base.center.y, fp.z + grab.z))
-        }
-        // thumbstick left / right turns the rack about its own vertical while the pointer is on it or it is dragged
-        val x = c?.stickX ?: 0f
-        if ((dragging || pointerHover != null || stickTurning) && abs(x) > STICK_DEAD && dt > 0f) {
-            val rate = -(x - STICK_DEAD * kotlin.math.sign(x)) / (1f - STICK_DEAD) * STICK_RATE_RAD_S
-            pose = pose.copy(yaw = pose.yaw + rate * dt)
-            if (!stickTurning) ChimeLog.i("STICK turn placed rack")
-            stickTurning = true
-        } else if (stickTurning && !dragging) {
-            stickTurning = false
-            endRackAdjust(commit = true)
-            return
-        }
-        if (pose != base) moveDragged(pose)
-        // D14: walking into the rack makes it see-through
-        val faded = hasHead && placeRule.clearance(dragPose ?: state.rack ?: return, head.position) < FADE_NEAR_M
+        val pose = state.rack ?: return
+        val faded = hasHead && placeRule.clearance(pose, head.position) < FADE_NEAR_M
         if (faded != rackFaded) {
             rackFaded = faded
             view.setFaded(faded)
             ChimeLog.i("RACK faded=$faded")
         }
-    }
-
-    /** Moves the rack being dragged / turned, kept 0.8 m clear of the head (pushed out) and within 6 m. */
-    private fun moveDragged(pose: RackPose) {
-        val (clear, _) = placeRule.pushClear(pose, head.position)
-        val foot = Vec3(head.position.x, clear.center.y, head.position.z)
-        val off = Vec3(clear.center.x - foot.x, 0f, clear.center.z - foot.z)
-        val p = if (off.length > PlacementUseCase.FAR_M) clear.copy(center = foot + off.normalized() * PlacementUseCase.FAR_M) else clear
-        dragPose = p
-        dragMoved = true
-        rack?.place(p)
-    }
-
-    /** Ends a drag / turn: the ViewModel takes the new pose ([commit]) or the rack goes back to the model's. */
-    private fun endRackAdjust(commit: Boolean) {
-        val p = dragPose
-        dragPose = null
-        dragGrab = null
-        stickTurning = false
-        if (p != null && commit && dragMoved) {
-            ChimeLog.i("DRAG end center=${ChimeLog.pos(p.center)} yaw=${ChimeLog.f(Math.toDegrees(p.yaw.toDouble()).toFloat(), 1)}")
-            sink(ChimeEvent.RackMoved(p))
-        } else {
-            ui.rack?.let { r -> if (ui.room.placed) rack?.place(r) }
-        }
-        dragMoved = false
     }
 
     /** More menu "Bring here" (D14): the placed rack straight ahead of the head, facing the user. */
@@ -1208,8 +1120,8 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
 
     /**
      * A recenter (pose jump, or the check after coming back to the front): panels re-park in front of the
-     * head, the placing ghost starts ahead again, and a placed rack whose centre is more than [offRad] off
-     * the level heading goes straight ahead, facing the user (D9). A rack still in front keeps its wall.
+     * head and the placing ghost starts ahead again. A placed rack is locked (v0.1.3): when it is more than
+     * [offRad] off the level heading it stays put and the ViewModel shows the "use Move" snackbar.
      */
     private fun onRecentered(reason: String, offRad: Float): String {
         follower.reset()
@@ -1230,7 +1142,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
                 val fy = floorY ?: rack.center.y
                 val pose = HeadFrame.rackAhead(head.position, head.rotation, fy, rack.scale)
                 sink(ChimeEvent.RackRecentered(pose))
-                "$line rack=ahead center=${ChimeLog.pos(pose.center)}"
+                "$line rack=locked-off ahead=${ChimeLog.pos(pose.center)}"
             }
             else -> "$line rack=kept"
         }.also { ChimeLog.i(it) }
@@ -1282,10 +1194,6 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
 
         /** Virtual floor: this far below the eyes (QA r2 suggestion; `place=auto` already used it). */
         private const val VIRTUAL_EYE_M = 1.55f
-
-        /** A hand drag moves the rack by the hand's movement times distance / arm length (at most 6x). */
-        private const val HAND_ARM_M = 0.5f
-        private const val HAND_GAIN_MAX = 6f
 
         /** The rack turns see-through when the head comes within this of its footprint (D14). */
         private const val FADE_NEAR_M = 0.3f

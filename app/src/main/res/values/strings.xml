@@ -34,7 +34,7 @@
     <string name="hint_placing">Look at the floor and pinch · stick left/right turns</string>
     <string name="hint_near">A bit farther</string>
     <string name="hint_snapped">Lined up with the wall · pinch to place</string>
-    <string name="hint_free">Look at a bell and pinch · hold to drag, stick turns</string>
+    <string name="hint_free">Look at a bell and pinch · centre and side are two notes</string>
     <string name="hint_pick">Pick a song, listen or play along</string>
     <string name="hint_follow">Strike the glowing one</string>
     <string name="hint_demo">Listen</string>
@@ -71,4 +71,8 @@
     <string name="floor_up">Raise</string>
     <string name="hint_virtual">Virtual floor: Lower / Raise it to your floor · pinch to place</string>
     <string name="snack_virtual_floor">No floor found: using a virtual floor</string>
+    <string name="action_move">Move</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="hint_moving">Moving: point to the new spot, trigger or pinch to set · stick turns</string>
+    <string name="snack_rack_behind">The rack is not in front: use Move, or More > Bring here</string>
 </resources>

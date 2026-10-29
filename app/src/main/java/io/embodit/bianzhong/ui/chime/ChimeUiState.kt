@@ -46,6 +46,7 @@ enum class SnackKind {
     LOW_CEILING, // I23
     SNAPPED, // "Lined up with the wall", 0.8 s
     VIRTUAL_FLOOR, // v0.1.2 (D7): no floor in 5 s, a virtual floor stands in
+    RACK_BEHIND, // v0.1.3: after a recenter the locked rack is off to the side / behind: use Move
 }
 
 data class SnackUi(val id: Int, val kind: SnackKind)
@@ -108,6 +109,13 @@ data class ChimeUiState(
     val muted: Boolean = false,
     /** D15: master volume level 0 low, 1 medium (default), 2 high; remembered. */
     val volume: Int = 1,
+    /**
+     * v0.1.3 (user on the headset: "放置后就不要再移动了，点了 UI move 再移动"): placing again from [Move], the ghost
+     * starting at the rack's pose; the trigger / pinch puts it down and the rack is locked again.
+     */
+    val moving: Boolean = false,
+    /** Where the ghost starts in a move (the locked rack's pose). */
+    val moveStart: RackPose? = null,
 ) {
     val strokes: Int
         get() = song.strokes.size
@@ -128,7 +136,7 @@ sealed interface ChimeEvent {
     /** After a recenter the rack was left off the heading: it goes to [pose], straight ahead (D9). */
     data class RackRecentered(val pose: RackPose) : ChimeEvent
 
-    /** The placed rack was dragged / turned to [pose] (D1 / D14, v0.1.2). */
+    /** More > Bring here put the rack at [pose] (D14). */
     data class RackMoved(val pose: RackPose) : ChimeEvent
 
     /** A tap on the floor / trigger while placing: the scene's ghost pose (null = cannot place here). */
@@ -172,6 +180,12 @@ sealed interface ChimeEvent {
     data object BringClicked : ChimeEvent
 
     data object MuteClicked : ChimeEvent
+
+    /** v0.1.3: the main panel's [Move]: the locked rack may be placed again. */
+    data object MoveClicked : ChimeEvent
+
+    /** In a move: back to where the rack was, locked. */
+    data object MoveCancelClicked : ChimeEvent
 
     data class VolumeSelected(val level: Int) : ChimeEvent
 

@@ -49,14 +49,16 @@ private const val FLOOR_STEP_M = 0.05f
 @Composable
 internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent) -> Unit) {
     val (w, h) = PanelSpec.CONTROL_SIZE
-    Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual)) {
+    Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual, state.moving)) {
         if (!filled) return@Glass
         val ready = state.room != Room.STARTING && state.room != Room.FINDING && state.dialog == null
         Title(state, ready, onEvent)
         if (state.room == Room.PLACING) {
             Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 WordButton("turn45", rs(R.string.action_turn45), { onEvent(ChimeEvent.Turn45Clicked) }, minWidth = 128.dp, height = 40.dp, iconRes = R.drawable.ic_rot_cw)
-                if (state.floorVirtual) {
+                if (state.moving) {
+                    WordButton("move_cancel", rs(R.string.action_cancel), { onEvent(ChimeEvent.MoveCancelClicked) }, minWidth = 104.dp, height = 40.dp, iconRes = R.drawable.ic_exit)
+                } else if (state.floorVirtual) {
                     // D7 (v0.1.2): the virtual floor is nudged 5 cm per press to meet the real one
                     WordButton("floor_down", rs(R.string.floor_down), { onEvent(ChimeEvent.FloorNudged(-FLOOR_STEP_M)) }, minWidth = 104.dp, height = 40.dp)
                     WordButton("floor_up", rs(R.string.floor_up), { onEvent(ChimeEvent.FloorNudged(FLOOR_STEP_M)) }, minWidth = 104.dp, height = 40.dp)
@@ -66,8 +68,9 @@ internal fun ControlPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeE
                 }
             }
         } else {
-            Row(modifier = Modifier.fillMaxWidth().height(40.dp).alpha(if (ready) 1f else DISABLED_ALPHA)) {
+            Row(modifier = Modifier.fillMaxWidth().height(40.dp).alpha(if (ready) 1f else DISABLED_ALPHA), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeSegments(state, ready, onEvent)
+                MoveButton(state, ready, onEvent)
             }
         }
         HintRow(state)
@@ -85,7 +88,10 @@ internal fun FollowPanel(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEv
     Glass(w.dp, h.dp, refreshKey = listOf(filled, state.room, state.song, state.step, state.english, state.scale, state.snapped, state.tooClose, state.dialog, state.labelsShown, state.language, state.muted, state.floorVirtual)) {
         if (!filled) return@Glass
         Title(state, true, onEvent)
-        Row(modifier = Modifier.fillMaxWidth().height(40.dp)) { ModeSegments(state, true, onEvent) }
+        Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeSegments(state, true, onEvent)
+            MoveButton(state, true, onEvent)
+        }
         Row(modifier = Modifier.fillMaxWidth().height(40.dp)) {
             Segments(
                 items = listOf("song_molihua" to rs(R.string.song_molihua), "song_xiaoxingxing" to rs(R.string.song_xiaoxingxing), "song_huanlesong" to rs(R.string.song_huanlesong)),
@@ -152,9 +158,15 @@ private fun ModeSegments(state: ChimeUiState, enabled: Boolean, onEvent: (ChimeE
         items = listOf("mode_free" to rs(R.string.mode_free), "mode_follow" to rs(R.string.mode_follow)),
         selected = if (state.room.follow) 1 else 0,
         onSelect = { if (enabled) onEvent(ChimeEvent.ModeSelected(it == 1)) },
-        itemWidth = 184.dp,
+        itemWidth = 132.dp,
         height = 40.dp,
     )
+}
+
+/** v0.1.3: the placed rack is locked; [Move] (worded, B19) places it again, the trigger / pinch locks it. */
+@Composable
+private fun MoveButton(state: ChimeUiState, enabled: Boolean, onEvent: (ChimeEvent) -> Unit) {
+    WordButton("move", rs(R.string.action_move), { if (enabled && state.room.placed) onEvent(ChimeEvent.MoveClicked) }, minWidth = 96.dp, height = 40.dp, iconRes = R.drawable.ic_move, enabled = enabled && state.room.placed)
 }
 
 /** The hint line (design `stateModel.hintPriority`), with a spinner while starting / finding the floor. */
@@ -167,6 +179,7 @@ private fun HintRow(state: ChimeUiState) {
             state.room == Room.FINDING || state.room == Room.NO_FLOOR -> rs(R.string.hint_finding)
             state.room == Room.BLOCKED -> rs(R.string.hint_starting)
             state.room == Room.PLACING && state.tooClose -> rs(R.string.hint_near)
+            state.room == Room.PLACING && state.moving -> rs(R.string.hint_moving)
             state.room == Room.PLACING && state.floorVirtual -> rs(R.string.hint_virtual)
             state.room == Room.PLACING && state.snapped -> rs(R.string.hint_snapped)
             state.room == Room.PLACING -> rs(R.string.hint_placing)

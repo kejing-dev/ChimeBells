@@ -34,7 +34,7 @@
     <string name="hint_placing">看向地面捏一下放下 · 摇杆左右转动</string>
     <string name="hint_near">再远一点</string>
     <string name="hint_snapped">已对齐墙边 · 捏一下放下</string>
-    <string name="hint_free">看着钟捏一下 · 按住可拖动，摇杆左右转动</string>
+    <string name="hint_free">看着钟捏一下 · 正中、侧边是两个音</string>
     <string name="hint_pick">选一首，听一遍或跟着敲</string>
     <string name="hint_follow">跟着亮的敲</string>
     <string name="hint_demo">听一听</string>
@@ -71,4 +71,8 @@
     <string name="floor_up">地面 ↑</string>
     <string name="hint_virtual">虚拟地面：用 地面 ↑↓ 对齐地板 · 捏一下放下</string>
     <string name="snack_virtual_floor">没找到地面，先用虚拟地面</string>
+    <string name="action_move">移动</string>
+    <string name="action_cancel">取消</string>
+    <string name="hint_moving">移动：指向新位置，扳机或捏一下放下 · 摇杆左右转动</string>
+    <string name="snack_rack_behind">钟架不在面前：点「移动」或「更多 → 移到面前」</string>
 </resources>
