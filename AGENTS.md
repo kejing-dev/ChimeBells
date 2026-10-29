@@ -3,7 +3,7 @@
 Twelve Zeng-Hou-Yi-style yongzhong hang 1:1 on a two-tier lacquer rack beside your real wall: look at a bell
 and pinch, strike the centre for one note and the side for another (one bell, two notes); in Follow the
 next drum glows so you can play a tune through. PICO OS 6, Kotlin, PICO Spatial SDK 6.1.9, one Mixed Stage
-(Full Space, passthrough), package `io.embodit.bianzhong`, v0.1.2.
+(Full Space, passthrough), package `io.embodit.bianzhong`, v0.1.3.
 
 Design package (binding): `../spatial-app-factory/apps/bianzhong/design-package.json` (v1.2.1, archetype D,
 STAGE_MIXED, single panel with popup, 19 states S0 - S18). Mockup: `../spatial-app-factory/apps/bianzhong/sample.html`.
@@ -76,6 +76,17 @@ Taste profile D8 / D9 / D10; the whole UI was audited (`../spatial-app-factory/a
 - Tests: `HeadFrameTest` (turn 0 / 90 / 180 / -90 / 45 / 225 degrees then reset: rack straight ahead facing the user;
   heading ignores pitch / roll; pointer behind; recenter jump vs fast turn; plate UVs; plates face the viewer,
   +X to their right, upright, no reflection) and `PanelClearanceTest`. `gradlew testDebugUnitTest`: 16 / 16.
+
+## v0.1.3 — the placed rack is locked
+
+Headset feedback on 0.1.2 (2026-10-28): "现在trigger 放置后就不要再移动了，点了 UI move 再移动好吧" (taste D1: locked once put
+down, only a UI Move moves it again). The 0.1.2 drag gesture on the bells and the thumbstick turn of the placed rack are
+gone, and a recenter no longer moves a placed rack (when it is off the heading the snackbar says to use Move / Bring
+here). [Move] (worded, beside the mode segments, short and Follow forms) re-enters placing with the ghost at the rack's
+pose; it follows the controller ray (or waits for a gaze + pinch on the floor), the stick and Turn 45 turn it, the
+trigger / pinch puts it down and locks it; [Cancel] puts it back. Follow progress survives a move; More > Bring here and
+the size switch remain explicit UI moves. Debug `move=1` / `move=cancel`; `dump=1` has `moving`. Container question
+(Shared vs Full Space): `../spatial-app-factory/apps/bianzhong/build/container-recommendation.md` (stay Full Space).
 
 ## v0.1.2 — QA round 2 rework (q2-1 .. q2-4) and moving the placed rack
 
@@ -188,12 +199,13 @@ The design's `key=value` words in one `cmd` string (pairs separated by spaces, o
 | `hover=off` | no hover from the pointer ray (clean pictures; the gaze ray of the fixed emulator camera otherwise lights a bell) |
 | `freeze=1\|0` | stops swings, ripples, breathing, the demo clock and snackbar timers (2 - 4 fps safe) |
 | `menu=1\|0`, `stop=1`, `replace=1`, `retry=1`, `exit=1` | panel actions |
-| `ui=<control>` | presses a panel control by name (mute, floor_down, floor_up, vol_low, vol_mid, vol_high, menu_bring, more, turn45, mode_free, mode_follow, song_*, listen, follow, stop, again, labels_*, lang_*, size_*, menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half) |
+| `ui=<control>` | presses a panel control by name (move, move_cancel, mute, floor_down, floor_up, vol_low, vol_mid, vol_high, menu_bring, more, turn45, mode_free, mode_follow, song_*, listen, follow, stop, again, labels_*, lang_*, size_*, menu_replace, menu_exit, dialog_exit, dialog_retry, chip_half) |
 | `dump=1`, `hmd=1`, `bounds=1`, `planes=1` (planes + snap frames), `park=1` | queries (`hmd=1` also logs `plausible=` and `rackClear=` metres) |
 | `noplanes=1\|0` | v0.1.2: block plane detection and go back to S1 with no floor; the virtual floor comes after `floor_virtual_s` (default 5) seconds |
 | `floor_virtual_s=<s>`, `floor_nudge=<m>` | virtual-floor delay; raise / lower it while placing on it (the panel's Lower / Raise do 0.05 m) |
 | `mute=1\|0`, `volume=0\|1\|2` | D15: the main panel's Mute, the More menu's Volume (remembered in prefs) |
 | `bring=1` | More > Bring here: the placed rack straight ahead, facing the user |
+| `move=1\|cancel` | v0.1.3: the main panel's Move (placing again from the locked rack) / Cancel |
 
 Log tag `Bianzhong`: `STATE <Sxx> overlays=S4,S5,S10,S12,S15,S16 song=.. step=n/N hover=..` on every change;
 `strike=B6,zheng,pan=0.70,1.00`, `TAP`, `HOVER`, `SNAP on|off`, `WALLS`, `PLANES`, `PLACE`, `FOLLOW hit|miss|done`,
