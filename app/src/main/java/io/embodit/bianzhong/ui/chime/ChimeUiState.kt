@@ -108,8 +108,8 @@ data class ChimeUiState(
     val planesBlocked: Boolean = false,
     /** D15 (v0.1.2): bell strokes are silent; remembered. */
     val muted: Boolean = false,
-    /** D15: master volume level 0 low, 1 medium (default), 2 high; remembered. */
-    val volume: Int = 1,
+    /** D15 / v0.1.4: volume slider 0..1 (detents low 0, medium 0.5 = default, high 1); remembered. */
+    val volume: Float = 0.5f,
     /**
      * v0.1.3 (user on the headset: "放置后就不要再移动了，点了 UI move 再移动"): placing again from [Move], the ghost
      * starting at the rack's pose; the trigger / pinch puts it down and the rack is locked again.
@@ -194,7 +194,8 @@ sealed interface ChimeEvent {
     /** In a move: back to where the rack was, locked. */
     data object MoveCancelClicked : ChimeEvent
 
-    data class VolumeSelected(val level: Int) : ChimeEvent
+    /** The volume slider moved to [position] (0..1); [final] when let go (it then snaps to a near detent). */
+    data class VolumeChanged(val position: Float, val final: Boolean) : ChimeEvent
 
     /** Placing on the virtual floor: raise / lower it by [deltaM]. */
     data class FloorNudged(val deltaM: Float) : ChimeEvent

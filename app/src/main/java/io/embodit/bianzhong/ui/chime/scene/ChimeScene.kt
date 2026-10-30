@@ -28,6 +28,7 @@ import io.embodit.bianzhong.domain.usecase.PanelClearance
 import io.embodit.bianzhong.domain.usecase.PlacementUseCase
 import io.embodit.bianzhong.domain.usecase.RackPose
 import io.embodit.bianzhong.domain.usecase.RecenterDetector
+import io.embodit.bianzhong.domain.usecase.StrokeGain
 import io.embodit.bianzhong.domain.usecase.SnapFrame
 import io.embodit.bianzhong.domain.usecase.WallSnapUseCase
 import io.embodit.bianzhong.platform.ChimeGraph
@@ -524,8 +525,9 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         flashLeft[bell] = left
         ripples?.fire(bell, point, normal, now)
         val (l, r) = volumes(bell) ?: (1f to 1f)
-        val played = audio?.play(bell, zone, l, r) ?: false
-        ChimeLog.i(String.format(Locale.US, "strike=%s,%s,pan=%.2f,%.2f user=%b audio=%s", spec.id, zone.tag, l, r, user, if (ui.muted) "muted" else if (played) "ok" else "pending"))
+        val played = audio?.play(bell, zone, l, r)
+        // v0.1.4: the output level of every stroke is logged (QA: a single stroke and the tenth in a row within 1 dB)
+        ChimeLog.i(String.format(Locale.US, "strike=%s,%s,pan=%.2f,%.2f user=%b audio=%s", spec.id, zone.tag, l, r, user, if (ui.muted) "muted" else played?.let { "ok $it" } ?: "pending"))
     }
 
     /** Follow done: a silent gold ripple on every bell, left to right, 0.1 s apart. */
@@ -540,7 +542,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         audio?.stopAll()
     }
 
-    /** Left / right volumes from the bell's bearing seen from the head: +-60 degrees -> 0.2 .. 1.0. */
+    /** Left / right pan from the bell's bearing seen from the head (+-60 degrees), the louder ear at 1 ([StrokeGain.pan]). */
     private fun volumes(bell: Int): Pair<Float, Float>? {
         val pose = ui.rack ?: return null
         if (!hasHead) return null
@@ -549,7 +551,7 @@ class ChimeScene(private val sink: (ChimeEvent) -> Unit) : ChimeProbe.SceneProbe
         val v = c - head.position
         val a = atan2(v.dot(head.right), v.dot(head.forward))
         val s = (a / PAN_RANGE_RAD).coerceIn(-1f, 1f)
-        return (0.6f - 0.4f * s) to (0.6f + 0.4f * s)
+        return StrokeGain.pan(s)
     }
 
     // =========================================================================================

@@ -9,6 +9,7 @@ import io.embodit.bianzhong.domain.model.Song
 import io.embodit.bianzhong.domain.model.Vec3
 import io.embodit.bianzhong.domain.model.Zone
 import io.embodit.bianzhong.domain.usecase.RackPose
+import io.embodit.bianzhong.domain.usecase.StrokeGain
 import io.embodit.bianzhong.domain.usecase.WallSnapUseCase
 import io.embodit.bianzhong.platform.ChimeGraph
 import io.embodit.bianzhong.platform.ChimeLog
@@ -91,7 +92,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
     private var panelAway = false
     private var moveRack: RackPose? = null
     private var moveStep = 0
-    private var volume = 1
+    private var volume = StrokeGain.DEFAULT
     private var planesOn = true
     private var background = false
     private var demoStroke: io.embodit.bianzhong.domain.model.Stroke? = null
@@ -112,7 +113,10 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         scale = if (prefs.getInt(KEY_SCALE, 1) == 2) 0.5f else 1f
         coachSeen = prefs.getBoolean(KEY_COACH, false)
         muted = prefs.getBoolean(KEY_MUTED, false)
-        volume = prefs.getInt(KEY_VOLUME, 1).coerceIn(0, 2)
+        // v0.1.4: a slider position; 0.1.2 / 0.1.3 kept a level 0..2
+        volume =
+            if (prefs.contains(KEY_VOLUME_POS)) prefs.getFloat(KEY_VOLUME_POS, StrokeGain.DEFAULT).coerceIn(0f, 1f)
+            else StrokeGain.fromLevel(runCatching { prefs.getInt(KEY_VOLUME, 1) }.getOrDefault(1))
         publish()
     }
 
@@ -252,10 +256,12 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
                 if (muted) emit(ChimeUiEffect.StopSounds)
                 ChimeLog.i("AUDIO muted=$muted")
             }
-            is ChimeEvent.VolumeSelected -> {
-                volume = event.level.coerceIn(0, 2)
-                prefs.edit().putInt(KEY_VOLUME, volume).apply()
-                ChimeLog.i("AUDIO volume=$volume")
+            is ChimeEvent.VolumeChanged -> {
+                volume = if (event.final) StrokeGain.snap(event.position) else event.position.coerceIn(0f, 1f)
+                if (event.final) {
+                    prefs.edit().putFloat(KEY_VOLUME_POS, volume).apply()
+                    ChimeLog.i(String.format(Locale.US, "AUDIO volume=%.2f detent=%d master=%.1fdB", volume, StrokeGain.detentOf(volume), StrokeGain.toDb(StrokeGain.master(volume, false))))
+                }
             }
             is ChimeEvent.FloorNudged -> {
                 if (!floorVirtual || room != Room.PLACING) return
@@ -708,7 +714,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         o.put("muted", muted)
         o.put("moving", moveFrom != null && room == Room.PLACING)
         o.put("panelAway", panelAway)
-        o.put("volume", volume)
+        o.put("volume", volume.toDouble())
         o.put("coachSeen", coachSeen)
         rack?.let { r ->
             o.put("rack", JSONObject().put("center", ChimeLog.pos(r.center)).put("yawDeg", Math.toDegrees(r.yaw.toDouble())).put("scale", r.scale.toDouble()))
@@ -758,7 +764,8 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
             }
             "floor_nudge" -> onEvent(ChimeEvent.FloorNudged(v.toFloatOrNull() ?: 0f))
             "mute" -> if ((v == "1" || v == "on") != muted) onEvent(ChimeEvent.MuteClicked)
-            "volume" -> onEvent(ChimeEvent.VolumeSelected(v.toIntOrNull() ?: 1))
+            // volume=0|1|2 picks a detent (low / medium / high), volume=0.37 a slider position
+            "volume" -> onEvent(ChimeEvent.VolumeChanged(v.toIntOrNull()?.let { StrokeGain.fromLevel(it) } ?: v.toFloatOrNull() ?: StrokeGain.DEFAULT, true))
             "bring" -> onEvent(ChimeEvent.BringClicked)
             "recall" -> onEvent(ChimeEvent.RecallPanelClicked)
             "move" -> onEvent(if (v == "cancel" || v == "0") ChimeEvent.MoveCancelClicked else ChimeEvent.MoveClicked)
@@ -975,6 +982,7 @@ class ChimeViewModel(private val appContext: Context) : ViewModel() {
         private const val KEY_COACH = "coachSeen"
         private const val KEY_MUTED = "muted"
         private const val KEY_VOLUME = "volume"
+        private const val KEY_VOLUME_POS = "volumePos"
         private const val VIRTUAL_FLOOR_AFTER_S = 5
         private const val VIRTUAL_SNACK_MS = 5000L
         private const val RACK_BEHIND_SNACK_MS = 6000L

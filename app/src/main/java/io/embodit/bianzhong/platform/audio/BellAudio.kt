@@ -8,18 +8,35 @@ import io.embodit.bianzhong.domain.model.Bells
 import io.embodit.bianzhong.domain.model.Zone
 import io.embodit.bianzhong.domain.usecase.StrokeGain
 import io.embodit.bianzhong.platform.ChimeLog
+import java.util.Locale
 
 /**
- * The bell strokes (design `audio`): 24 pre-rendered modal-synthesis wavs (`tools/synth_bells.py`,
- * assets/bells, stored uncompressed) played through one SoundPool with 8 voices. A new stroke of a bell
- * does not cut the one still ringing. Left / right volumes of the ringing voices follow the bell's
- * direction from the head every frame ([pan]); distance does not attenuate. Every voice is scaled by the master
- * level and a polyphony share ([StrokeGain], v0.1.2 / D15); muted, no stroke plays.
- * Main thread only; [release] on every path that ends the scene.
+ * The bell strokes (design `audio`): 24 pre-rendered modal-synthesis wavs (`tools/synth_bells.py`, assets/bells, stored
+ * uncompressed, peaks -1 / -3 dBFS) played through one SoundPool. Left / right volumes of the ringing voices follow the
+ * bell's direction from the head every frame ([pan]); distance does not attenuate.
+ *
+ * v0.1.4 ("连击后好像声音会变小"): a new stroke always plays at master x pan ([StrokeGain.volumes]), so the tenth stroke
+ * in a row is as strong as the first. 16 voices; when the tails still ringing would push the sum past -1 dBFS they are
+ * ducked ([StrokeGain.duckFor]), and a bell struck again lets its previous voice fade - both ramped over [FADE_MS] in
+ * [tick], never cut. Main thread only; [release] on every path that ends the scene.
  */
 class BellAudio(context: Context) {
 
-    private class Voice(val stream: Int, val bell: Int, val endsAtMs: Long, var left: Float, var right: Float)
+    private class Voice(
+        val stream: Int,
+        val bell: Int,
+        val startMs: Long,
+        val lengthMs: Long,
+        /** File peak (linear) of the stroke. */
+        val filePeak: Float,
+        var left: Float,
+        var right: Float,
+    ) {
+        /** Duck applied now, and where it is ramping to. */
+        var duck = 1f
+        var duckTo = 1f
+        var applied = -1f to -1f
+    }
 
     private val pool: SoundPool =
         SoundPool.Builder()
@@ -27,29 +44,24 @@ class BellAudio(context: Context) {
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
             .build()
     private val sounds = HashMap<String, Int>()
+    private val peaks = HashMap<String, Float>()
     private val loaded = HashSet<Int>()
     private val voices = ArrayList<Voice>()
-    private var level = 1
+    private var position = StrokeGain.DEFAULT
     private var muted = false
-    private var appliedShare = 1f
-
-    /** Master level 0..2 and mute (from the UI state, remembered there). */
-    fun setLevel(muted: Boolean, level: Int) {
-        if (muted == this.muted && level == this.level) return
-        this.muted = muted
-        this.level = level
-        if (muted) stopAll() else applyAll()
-    }
+    private var lastTickMs = 0L
 
     init {
         pool.setOnLoadCompleteListener { _, id, status -> if (status == 0) loaded += id }
         val assets = context.assets
         for (b in Bells.all) for (z in Zone.entries) {
             val key = key(b.index, z)
-            runCatching { assets.openFd("bells/$key.wav").use { fd -> sounds[key] = pool.load(fd, 1) } }
-                .onFailure { ChimeLog.e("AUDIO load $key failed: $it", it) }
+            runCatching {
+                assets.openFd("bells/$key.wav").use { fd -> sounds[key] = pool.load(fd, 1) }
+                peaks[key] = assets.open("bells/$key.wav").use { WavPeak.of(it) }
+            }.onFailure { ChimeLog.e("AUDIO load $key failed: $it", it) }
         }
-        ChimeLog.i("AUDIO loading ${sounds.size} strokes")
+        ChimeLog.i(String.format(Locale.US, "AUDIO loading %d strokes, file peaks %.1f .. %.1f dBFS", sounds.size, StrokeGain.toDb(peaks.values.minOrNull() ?: 0f), StrokeGain.toDb(peaks.values.maxOrNull() ?: 0f)))
     }
 
     private fun key(bell: Int, zone: Zone) = "B${bell + 1}_${zone.tag}"
@@ -57,48 +69,72 @@ class BellAudio(context: Context) {
     val ready: Boolean
         get() = loaded.size >= sounds.size && sounds.isNotEmpty()
 
-    /** Plays a stroke at the given left / right volumes; false when the sound is not loaded yet. */
-    fun play(bell: Int, zone: Zone, left: Float, right: Float): Boolean {
-        if (muted) return false
-        val id = sounds[key(bell, zone)] ?: return false
-        if (id !in loaded) return false
-        val now = SystemClock.elapsedRealtime()
-        voices.removeAll { it.endsAtMs < now }
-        val ringing = (voices.size + 1).coerceAtMost(MAX_STREAMS)
-        val (l, r) = StrokeGain.volumes(left, right, level, muted, ringing)
-        val stream = pool.play(id, l, r, 1, 0, 1f)
-        if (stream == 0) return false
-        voices += Voice(stream, bell, now + lengthMs(bell), left, right)
-        // the voices already ringing step down to the new share
-        if (StrokeGain.share(ringing) != appliedShare) applyAll()
-        return true
+    /** Slider position 0..1 and mute (from the UI state, remembered there). */
+    fun setLevel(muted: Boolean, position: Float) {
+        if (muted == this.muted && position == this.position) return
+        this.muted = muted
+        this.position = position
+        if (muted) stopAll() else for (v in voices) v.applied = -1f to -1f
     }
 
-    /** Updates the volumes of every ringing voice from [volumes] (bell -> left, right). */
+    /**
+     * Plays a stroke at the pan [left] / [right] (0..1, the louder ear 1); returns the log line, or null when the sound is
+     * not loaded yet / muted.
+     */
+    fun play(bell: Int, zone: Zone, left: Float, right: Float): String? {
+        if (muted) return null
+        val k = key(bell, zone)
+        val id = sounds[k] ?: return null
+        if (id !in loaded) return null
+        val now = SystemClock.elapsedRealtime()
+        voices.removeAll { now - it.startMs > it.lengthMs }
+        val (l, r) = StrokeGain.volumes(left, right, position, false)
+        val filePeak = peaks[k] ?: 1f
+        val newPeak = filePeak * maxOf(l, r)
+        // the bell struck again: its previous voice fades (one vibration per bell)
+        for (v in voices) if (v.bell == bell) v.duckTo = 0f
+        // the tails still ringing make room for the new stroke (ramped), the new stroke is never turned down
+        val tails = voices.filter { it.duckTo > 0f }.sumOf { (it.filePeak * maxOf(it.left, it.right) * StrokeGain.master(position, false) * it.duck * StrokeGain.envelope(now - it.startMs, it.lengthMs)).toDouble() }.toFloat()
+        val duck = StrokeGain.duckFor(newPeak, tails)
+        if (duck < 1f) for (v in voices) v.duckTo = minOf(v.duckTo, v.duck * duck)
+        // a full pool: the oldest voice (nearly silent by now) fades instead of being cut by SoundPool
+        if (voices.size >= MAX_STREAMS - 1) voices.minByOrNull { it.startMs }?.let { it.duckTo = 0f }
+        val stream = pool.play(id, l, r, 1, 0, 1f)
+        if (stream == 0) return null
+        val length = lengthMs(bell)
+        voices += Voice(stream, bell, now, length, filePeak, left, right).also { it.applied = l to r }
+        return String.format(Locale.US, "vol=%.2f,%.2f peak=%.1fdBFS ring=%d duck=%.2f tails=%.1fdBFS", l, r, StrokeGain.toDb(newPeak), voices.size, duck, StrokeGain.toDb(tails))
+    }
+
+    /** Updates the pan of every ringing voice from [volumes] (bell -> left, right) and runs the fades; once per frame. */
     fun pan(volumes: (Int) -> Pair<Float, Float>?) {
         if (voices.isEmpty()) return
         val now = SystemClock.elapsedRealtime()
-        voices.removeAll { it.endsAtMs < now }
-        val share = StrokeGain.share(voices.size)
-        for (v in voices) {
-            val (l, r) = volumes(v.bell) ?: continue
-            if (share == appliedShare && kotlin.math.abs(l - v.left) < 0.02f && kotlin.math.abs(r - v.right) < 0.02f) continue
-            v.left = l
-            v.right = r
-            val (vl, vr) = StrokeGain.volumes(l, r, level, muted, voices.size)
-            pool.setVolume(v.stream, vl, vr)
+        val step = if (lastTickMs == 0L) 1f else ((now - lastTickMs) / FADE_MS).coerceIn(0f, 1f)
+        lastTickMs = now
+        val it = voices.iterator()
+        while (it.hasNext()) {
+            val v = it.next()
+            if (now - v.startMs > v.lengthMs) {
+                it.remove()
+                continue
+            }
+            volumes(v.bell)?.let { (l, r) ->
+                v.left = l
+                v.right = r
+            }
+            if (v.duck != v.duckTo) v.duck = if (v.duck > v.duckTo) maxOf(v.duckTo, v.duck - step) else minOf(v.duckTo, v.duck + step)
+            if (v.duck <= 0f) {
+                pool.stop(v.stream)
+                it.remove()
+                continue
+            }
+            val (l, r) = StrokeGain.volumes(v.left, v.right, position, muted)
+            val out = (l * v.duck) to (r * v.duck)
+            if (kotlin.math.abs(out.first - v.applied.first) < 0.01f && kotlin.math.abs(out.second - v.applied.second) < 0.01f) continue
+            v.applied = out
+            pool.setVolume(v.stream, out.first, out.second)
         }
-        appliedShare = share
-    }
-
-    private fun applyAll() {
-        val now = SystemClock.elapsedRealtime()
-        voices.removeAll { it.endsAtMs < now }
-        for (v in voices) {
-            val (vl, vr) = StrokeGain.volumes(v.left, v.right, level, muted, voices.size)
-            pool.setVolume(v.stream, vl, vr)
-        }
-        appliedShare = StrokeGain.share(voices.size)
     }
 
     fun stopAll() {
@@ -119,6 +155,8 @@ class BellAudio(context: Context) {
         }
 
     companion object {
-        const val MAX_STREAMS = 8
+        /** v0.1.4: 16 voices (0.1.2: 8, and SoundPool cut the oldest when a ninth came in). */
+        const val MAX_STREAMS = 16
+        private const val FADE_MS = 80f
     }
 }

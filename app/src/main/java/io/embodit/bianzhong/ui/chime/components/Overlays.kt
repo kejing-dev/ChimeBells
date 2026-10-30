@@ -29,7 +29,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pico.spatial.ui.design.Icon
 import com.pico.spatial.ui.design.PicoTheme
+import com.pico.spatial.ui.design.Slider
 import com.pico.spatial.ui.design.Text
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import io.embodit.bianzhong.domain.usecase.StrokeGain
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
 import io.embodit.bianzhong.R
@@ -46,8 +52,8 @@ import kotlin.math.abs
 private const val FADE_IN_MS = 150
 
 /**
- * The More menu (256 x 344 dp at 0.75, S10), popping up above the More key: note names, language,
- * size, volume (v0.1.2, D15), then Bring here (D14), Move rack and Exit. Segments act in place and leave the
+ * The More menu (288 x 400 dp at 0.75, S10), popping up above the More key: note names, language,
+ * size, the volume slider (v0.1.4, D15), then Bring here (D14), Move rack and Exit. Segments act in place and leave the
  * menu open; Bring here and Move rack close it.
  */
 @Composable
@@ -87,21 +93,59 @@ internal fun MoreMenu(state: ChimeUiState, filled: Boolean, onEvent: (ChimeEvent
                 height = 40.dp,
             )
         }
-        MenuRow(rs(R.string.menu_volume)) {
-            Segments(
-                items = listOf("vol_low" to rs(R.string.vol_low), "vol_mid" to rs(R.string.vol_mid), "vol_high" to rs(R.string.vol_high)),
-                selected = state.volume,
-                onSelect = { onEvent(ChimeEvent.VolumeSelected(it)) },
-                itemWidth = 50.dp,
-                height = 40.dp,
-            )
-        }
+        VolumeBlock(state, onEvent)
         Row(modifier = Modifier.fillMaxWidth().height(KeyHeight), verticalAlignment = Alignment.CenterVertically) {
             WordButton("menu_bring", rs(R.string.menu_bring), { onEvent(ChimeEvent.BringClicked) }, minWidth = 152.dp, height = 44.dp, iconRes = R.drawable.ic_hand, enabled = state.room.placed, modifier = Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth().height(KeyHeight), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             WordButton("menu_replace", rs(R.string.menu_replace), { onEvent(ChimeEvent.ReplaceClicked) }, minWidth = 152.dp, height = 44.dp, iconRes = R.drawable.ic_move, modifier = Modifier.weight(1f))
             Key("menu_exit", R.drawable.ic_exit, rs(R.string.action_exit)) { onEvent(ChimeEvent.ExitClicked) }
+        }
+    }
+}
+
+/**
+ * Volume (v0.1.4, user: "加个 UI bar 控制音量，然后能滑动也有三个档位"): a SpatialUI Slider 0..1 that snaps to low / medium /
+ * high when let go near one and may rest between them; the three detent words under it are tap targets with the same
+ * padding (the 0.1.3 "High" segment was cramped, D16). Mute stays on the main panel.
+ */
+@Composable
+private fun VolumeBlock(state: ChimeUiState, onEvent: (ChimeEvent) -> Unit) {
+    var drag by remember { mutableStateOf<Float?>(null) }
+    val shown = drag ?: state.volume
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = rs(R.string.menu_volume), color = PicoTheme.colorScheme.labelPrimary, style = ChimeType.figure, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(66.dp))
+            Slider(
+                value = shown,
+                onValueChange = { v ->
+                    drag = v
+                    onEvent(ChimeEvent.VolumeChanged(v, final = false))
+                },
+                valueRange = 0f..1f,
+                onValueChangeFinished = {
+                    onEvent(ChimeEvent.VolumeChanged(drag ?: state.volume, final = true))
+                    drag = null
+                },
+                modifier = Modifier.weight(1f).probe("vol_slider"),
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth().height(36.dp).padding(start = 74.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            listOf(Triple("vol_low", R.string.vol_low, 0), Triple("vol_mid", R.string.vol_mid, 1), Triple("vol_high", R.string.vol_high, 2)).forEach { (name, label, k) ->
+                val on = StrokeGain.detentOf(state.volume) == k
+                val pick = { onEvent(ChimeEvent.VolumeChanged(StrokeGain.fromLevel(k), final = true)) }
+                Box(
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable(onClick = pick)
+                            .probe(name, pick)
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = rs(label), color = if (on) PicoTheme.colorScheme.labelPrimary else PicoTheme.colorScheme.labelSecondary, style = ChimeType.figure, maxLines = 1, softWrap = false)
+                }
+            }
         }
     }
 }

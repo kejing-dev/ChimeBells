@@ -120,7 +120,8 @@ def main():
     os.makedirs(out, exist_ok=True)
     total = 0
     for i, (bid, fz, fc) in enumerate(BELLS):
-        level = -3.0 if i < 6 else -5.0
+        # v0.1.4: +2 dB (user: "声音现在有点小"); the loudest stroke peaks at -1 dBFS, never more
+        level = -1.0 if i < 6 else -3.0
         for zone, f_main, f_other, other_db in (("zheng", fz, fc, -18.0), ("ce", fc, fz, -14.0)):
             buf = render(i, f_main, f_other, other_db, seed=i * 2 + (zone == "ce"))
             path = os.path.join(out, "%s_%s.wav" % (bid, zone))

@@ -90,21 +90,5 @@ class ReworkV012Test {
 
     // ---- q2-4
 
-    @Test
-    fun mutedIsSilentAndDefaultIsRestrained() {
-        assertEquals(0f to 0f, StrokeGain.volumes(1f, 1f, 1, muted = true, ringing = 1))
-        val (l, r) = StrokeGain.volumes(1f, 1f, 1, muted = false, ringing = 1)
-        assertTrue(l <= 0.5f && r <= 0.5f)
-        assertTrue(StrokeGain.master(0, false) < StrokeGain.master(1, false) && StrokeGain.master(1, false) < StrokeGain.master(2, false))
-    }
-
-    @Test
-    fun eightVoicesStayNearOneStroke() {
-        for (level in 0..2) {
-            val one = StrokeGain.volumes(1f, 1f, level, false, 1).first
-            val sum8 = StrokeGain.volumes(1f, 1f, level, false, 8).first * 8
-            assertTrue("level=$level sum8=$sum8 one=$one", sum8 <= one * 2f)
-            assertTrue(sum8 <= 1.5f)
-        }
-    }
+    // ---- q2-4 is superseded by v0.1.4's gain model (StrokeGainTest)
 }
